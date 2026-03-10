@@ -11,9 +11,8 @@ export const api = axios.create({
 
 /**
  * Streamline API — think-book backend (port 5000)
- * Used ONLY for Resource Master:
- *   GET /invoicing/resources          → paginated list
- *   GET /invoicing/resources?limit=-1 → all resources
+ * Proxied via Vite: /api/invoicing/* → http://localhost:5000/api/invoicing/*
+ * Used for: resources, projects
  */
 export const streamlineApi = axios.create({
   baseURL: "/api",
@@ -28,3 +27,12 @@ const attachToken = (config: any) => {
 
 api.interceptors.request.use(attachToken);
 streamlineApi.interceptors.request.use(attachToken);
+
+/** Extract a user-readable message from any caught error */
+export function getErrorMessage(err: unknown, fallback = "Something went wrong"): string {
+  if (err && typeof err === "object") {
+    const e = err as { response?: { data?: { error?: string; message?: string } }; message?: string };
+    return e.response?.data?.error || e.response?.data?.message || e.message || fallback;
+  }
+  return fallback;
+}

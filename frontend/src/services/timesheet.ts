@@ -57,6 +57,7 @@ export interface TeamMember {
 export interface ProjectMaster {
   _id: string;
   project_name: string;
+  project_code?: string;
   unique_id?: string;
   project_status?: string;
 }
@@ -68,6 +69,15 @@ export interface MappingRecord {
   employee_id: { _id: string; employee_name: string; official_email: string; unique_id: string; designation?: string };
   mapped_at: string;
   is_active: boolean;
+}
+
+export interface EmployeeProject {
+  mapping_id: string;
+  project_id: string;
+  project_name: string;
+  project_code: string;
+  manager: { _id: string; full_name: string; email: string } | null;
+  mapped_at: string;
 }
 
 export interface ManagerUser {
@@ -89,72 +99,110 @@ export interface EmployeeMaster {
 // ── Employee Timesheet API ────────────────────────────────────────────────────
 
 export const timesheetService = {
-  /** Get own timesheet for a month */
-  getOwn: (month: number, year: number) =>
-    api.get<{ success: boolean; data: Timesheet | null; employee: EmployeeInfo }>(
+  /** Get own timesheet for a month — returns { data: Timesheet|null, employee } */
+  getOwn: async (month: number, year: number) => {
+    const res = await api.get<{ success: boolean; data: Timesheet | null; employee: EmployeeInfo }>(
       `/timesheet?month=${month}&year=${year}`
-    ),
+    );
+    return res.data; // { data, employee }
+  },
 
   /** Create new draft timesheet */
-  create: (month: number, year: number, entries: Omit<TimesheetEntry, '_id'>[]) =>
-    api.post<{ success: boolean; data: Timesheet }>('/timesheet', { month, year, entries }),
+  create: async (month: number, year: number, entries: Omit<TimesheetEntry, '_id'>[]) => {
+    const res = await api.post<{ success: boolean; data: Timesheet }>('/timesheet', { month, year, entries });
+    return res.data; // { data }
+  },
 
   /** Update entries (draft only) */
-  update: (id: string, entries: Omit<TimesheetEntry, '_id'>[]) =>
-    api.put<{ success: boolean; data: Timesheet }>(`/timesheet/${id}`, { entries }),
+  update: async (id: string, entries: Omit<TimesheetEntry, '_id'>[]) => {
+    const res = await api.put<{ success: boolean; data: Timesheet }>(`/timesheet/${id}`, { entries });
+    return res.data; // { data }
+  },
 
   /** Submit timesheet */
-  submit: (id: string) =>
-    api.put<{ success: boolean; data: Timesheet; message: string }>(`/timesheet/${id}/submit`, {}),
+  submit: async (id: string) => {
+    const res = await api.put<{ success: boolean; data: Timesheet; message: string }>(`/timesheet/${id}/submit`, {});
+    return res.data; // { data, message }
+  },
 };
 
 // ── Manager Team Timesheets API ────────────────────────────────────────────────
 
 export const managerTimesheetService = {
   /** Get all mapped employees with their timesheet status */
-  getTeam: (month: number, year: number) =>
-    api.get<{ success: boolean; data: TeamMember[] }>(
+  getTeam: async (month: number, year: number) => {
+    const res = await api.get<{ success: boolean; data: TeamMember[] }>(
       `/timesheet/team?month=${month}&year=${year}`
-    ),
+    );
+    return res.data; // { data }
+  },
 
   /** View a specific employee's timesheet */
-  getEmployeeTimesheet: (employeeId: string, month: number, year: number) =>
-    api.get<{ success: boolean; data: Timesheet | null; employee: EmployeeMaster }>(
+  getEmployeeTimesheet: async (employeeId: string, month: number, year: number) => {
+    const res = await api.get<{ success: boolean; data: Timesheet | null; employee: EmployeeMaster }>(
       `/timesheet/employee/${employeeId}?month=${month}&year=${year}`
-    ),
+    );
+    return res.data; // { data, employee }
+  },
+};
+
+// ── Employee: My Projects API ──────────────────────────────────────────────────
+
+export const employeeProjectService = {
+  getMyProjects: async () => {
+    const res = await api.get<{ success: boolean; data: EmployeeProject[] }>('/employee-mapping/my-projects');
+    return res.data;
+  },
 };
 
 // ── Admin Employee Mapping API ─────────────────────────────────────────────────
 
 export const employeeMappingService = {
   /** List all mappings */
-  getAll: () =>
-    api.get<{ success: boolean; data: MappingRecord[] }>('/employee-mapping'),
+  getAll: async () => {
+    const res = await api.get<{ success: boolean; data: MappingRecord[] }>('/employee-mapping');
+    return res.data; // { data }
+  },
 
   /** Managers dropdown */
-  getManagers: () =>
-    api.get<{ success: boolean; data: ManagerUser[] }>('/employee-mapping/managers'),
+  getManagers: async () => {
+    const res = await api.get<{ success: boolean; data: ManagerUser[] }>('/employee-mapping/managers');
+    return res.data;
+  },
 
   /** Employees dropdown */
-  getEmployees: () =>
-    api.get<{ success: boolean; data: EmployeeMaster[] }>('/employee-mapping/employees'),
+  getEmployees: async () => {
+    const res = await api.get<{ success: boolean; data: EmployeeMaster[] }>('/employee-mapping/employees');
+    return res.data;
+  },
 
-  /** Projects dropdown */
-  getProjects: () =>
-    api.get<{ success: boolean; data: ProjectMaster[] }>('/employee-mapping/projects'),
+  /** Projects dropdown — fetched from Streamline (port 5000) */
+  getProjects: async () => {
+    const res = await api.get<{ projects: ProjectMaster[]; pagination: any }>(
+      '/streamline/projects?limit=500&page=1'
+    );
+    // Normalise to the same shape the rest of the code expects: { data: ProjectMaster[] }
+    return { data: res.data.projects ?? [] };
+  },
 
   /** Create/upsert mappings */
-  create: (manager_id: string, project_id: string, employee_ids: string[]) =>
-    api.post<{ success: boolean; data: { created: string[]; updated: string[]; errors: any[] } }>(
+  create: async (manager_id: string, project_id: string, employee_ids: string[], project_name?: string, project_code?: string) => {
+    const res = await api.post<{ success: boolean; data: { created: string[]; updated: string[]; errors: any[] } }>(
       '/employee-mapping',
-      { manager_id, project_id, employee_ids }
-    ),
+      { manager_id, project_id, employee_ids, project_name, project_code }
+    );
+    return res.data;
+  },
 
   /** Remove a mapping */
-  remove: (id: string) =>
-    api.delete<{ success: boolean; message: string }>(`/employee-mapping/${id}`),
+  remove: async (id: string) => {
+    const res = await api.delete<{ success: boolean; message: string }>(`/employee-mapping/${id}`);
+    return res.data;
+  },
 
   /** Reassign employee to different manager */
-  update: (id: string, manager_id: string) =>
-    api.put<{ success: boolean; message: string }>(`/employee-mapping/${id}`, { manager_id }),
+  update: async (id: string, manager_id: string) => {
+    const res = await api.put<{ success: boolean; message: string }>(`/employee-mapping/${id}`, { manager_id });
+    return res.data;
+  },
 };

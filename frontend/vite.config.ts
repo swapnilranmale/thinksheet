@@ -10,10 +10,10 @@ export default defineConfig({
     },
   },
   server: {
-    port: 3001,
+    port: 3002,
     proxy: {
-      // Streamline Resource Master — must be listed before the generic /api rule
-      "/api/invoicing/resources": {
+      // Streamline invoicing endpoints — must be listed before the generic /api rule
+      "/api/invoicing": {
         target: "http://localhost:5000",
         changeOrigin: true,
       },

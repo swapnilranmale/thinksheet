@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
+import { getErrorMessage } from "@/lib/api";
+import { useState, useEffect } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+
 import {
   ChevronLeft,
   Clock,
@@ -76,7 +78,7 @@ function StatusBadge({ status }: { status: TeamMember["status"] }) {
 
 export default function ManagerTimesheetReviewPage() {
   const [selectedMonth, setSelectedMonth] = useState(CURRENT_MONTH); // 0-indexed
-  const [selectedYear] = useState(CURRENT_YEAR);
+  const selectedYear = CURRENT_YEAR;
 
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
@@ -88,20 +90,22 @@ export default function ManagerTimesheetReviewPage() {
 
   // ── Load team list ────────────────────────────────────────────────────────
 
-  const loadTeam = useCallback(async () => {
-    try {
-      setLoading(true);
-      const apiMonth = selectedMonth + 1;
-      const res = await managerTimesheetService.getTeam(apiMonth, selectedYear);
-      setTeam(res.data);
-    } catch (err: any) {
-      toast.error(err.message || "Failed to load team data");
-    } finally {
-      setLoading(false);
-    }
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        const apiMonth = selectedMonth + 1;
+        const res = await managerTimesheetService.getTeam(apiMonth, selectedYear);
+        if (!cancelled) setTeam(res.data);
+      } catch (err) {
+        if (!cancelled) toast.error(getErrorMessage(err, "Failed to load team data"));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
   }, [selectedMonth, selectedYear]);
-
-  useEffect(() => { loadTeam(); }, [loadTeam]);
 
   // ── Load individual employee timesheet ────────────────────────────────────
 
@@ -117,8 +121,8 @@ export default function ManagerTimesheetReviewPage() {
       );
       setViewingTimesheet(res.data);
       setViewingEmployee(res.employee);
-    } catch (err: any) {
-      toast.error(err.message || "Failed to load timesheet");
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to load timesheet"));
       setViewingMember(null);
     } finally {
       setDetailLoading(false);
@@ -384,9 +388,11 @@ export default function ManagerTimesheetReviewPage() {
             value={String(selectedMonth)}
             onValueChange={(v) => setSelectedMonth(Number(v))}
           >
-            <SelectTrigger className="w-44">
-              <Calendar className="w-4 h-4 mr-2 text-muted-foreground" />
-              <SelectValue />
+            <SelectTrigger className="w-48">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-muted-foreground shrink-0" />
+                <span>{MONTHS[selectedMonth]} {selectedYear}</span>
+              </div>
             </SelectTrigger>
             <SelectContent>
               {MONTHS.map((month, idx) => (

@@ -8,7 +8,6 @@ import { authenticate, checkActive, authorize } from '../middlewares/auth.js';
 import EmployeeManagerMapping from '../models/timesheet/EmployeeManagerMapping.js';
 import Employee from '../models/users/Employee.js';
 import User from '../models/users/User.js';
-import ProjectMaster from '../models/invoicing/ProjectMaster.js';
 
 const router = express.Router();
 const adminOnly = [authenticate, checkActive, authorize(['ADMINISTRATOR'])];
@@ -22,13 +21,22 @@ router.get('/', ...adminOnly, async (req, res) => {
             tenant_id: tenantId,
             is_deleted: { $ne: true }
         })
-            .populate('project_id', 'project_name unique_id project_status')
             .populate('manager_id', 'full_name email designation')
             .populate('employee_id', 'employee_name official_email unique_id designation department_id')
             .sort({ createdAt: -1 })
             .lean();
 
-        res.json({ success: true, data: mappings });
+        // Shape project_id into a consistent object (data came from Streamline, stored inline)
+        const shaped = mappings.map(m => ({
+            ...m,
+            project_id: {
+                _id: m.project_id,
+                project_name: m.project_name || '',
+                unique_id: m.project_code || ''
+            }
+        }));
+
+        res.json({ success: true, data: shaped });
     } catch (err) {
         res.status(500).json({ error: 'Server error', message: err.message });
     }
@@ -72,18 +80,43 @@ router.get('/employees', ...adminOnly, async (req, res) => {
     }
 });
 
-// ── GET /api/employee-mapping/projects  — projects dropdown ──────────────────
+// ── GET /api/employee-mapping/my-projects  — projects for logged-in EMPLOYEE ─
 
-router.get('/projects', ...adminOnly, async (req, res) => {
+router.get('/my-projects', authenticate, checkActive, authorize(['EMPLOYEE']), async (req, res) => {
     try {
         const tenantId = req.tenantIdString;
-        const projects = await ProjectMaster.find({
+
+        const employee = await Employee.findOne({
             tenant_id: tenantId,
-            project_status: 'Active'
+            official_email: req.user.email,
+            is_active: true
+        }).lean();
+
+        if (!employee) {
+            return res.status(404).json({ error: 'Employee record not found' });
+        }
+
+        const mappings = await EmployeeManagerMapping.find({
+            tenant_id: tenantId,
+            employee_id: employee._id,
+            is_deleted: { $ne: true },
+            is_active: true
         })
-            .select('_id project_name unique_id project_status')
-            .sort({ project_name: 1 })
+            .populate('manager_id', 'full_name email designation')
             .lean();
+
+        const projects = mappings.map(m => ({
+            mapping_id: m._id,
+            project_id: String(m.project_id),
+            project_name: m.project_name || '',
+            project_code: m.project_code || '',
+            manager: m.manager_id ? {
+                _id: m.manager_id._id,
+                full_name: m.manager_id.full_name,
+                email: m.manager_id.email,
+            } : null,
+            mapped_at: m.mapped_at,
+        }));
 
         res.json({ success: true, data: projects });
     } catch (err) {
@@ -163,7 +196,7 @@ async function ensureEmployeeUser(employee, tenantId) {
 router.post('/', ...adminOnly, async (req, res) => {
     try {
         const tenantId = req.tenantIdString;
-        const { manager_id, project_id, employee_ids } = req.body;
+        const { manager_id, project_id, project_name = '', project_code = '', employee_ids } = req.body;
 
         if (!manager_id || !project_id || !Array.isArray(employee_ids) || employee_ids.length === 0) {
             return res.status(400).json({
@@ -174,9 +207,6 @@ router.post('/', ...adminOnly, async (req, res) => {
 
         if (!mongoose.Types.ObjectId.isValid(manager_id)) {
             return res.status(400).json({ error: 'Invalid manager_id' });
-        }
-        if (!mongoose.Types.ObjectId.isValid(project_id)) {
-            return res.status(400).json({ error: 'Invalid project_id' });
         }
 
         const results = { created: [], updated: [], errors: [], users_created: [] };
@@ -206,6 +236,8 @@ router.post('/', ...adminOnly, async (req, res) => {
                     {
                         manager_id,
                         project_id,
+                        project_name,
+                        project_code,
                         employee_id: empId,
                         tenant_id: tenantId,
                         mapped_by: req.user._id,

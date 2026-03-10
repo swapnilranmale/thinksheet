@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -17,9 +18,12 @@ import {
   CheckCircle2,
   Loader2,
   Check,
+  ChevronLeft,
+  FolderOpen,
 } from "lucide-react";
 import { toast } from "sonner";
 import { timesheetService, Timesheet, TimesheetEntry } from "@/services/timesheet";
+import { getErrorMessage } from "@/lib/api";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -165,8 +169,12 @@ function NumInput({
 // ── Component ──────────────────────────────────────────────────────────────────
 
 export default function EmployeeTimesheetPage() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const projectName = searchParams.get("projectName") ?? "Timesheet";
+
   const [selectedMonth, setSelectedMonth] = useState(CURRENT_MONTH);
-  const [selectedYear] = useState(CURRENT_YEAR);
+  const selectedYear = CURRENT_YEAR;
 
   const [timesheet, setTimesheet] = useState<Timesheet | null>(null);
   const [cells, setCells] = useState<CellsMap>({});
@@ -174,31 +182,32 @@ export default function EmployeeTimesheetPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  // ── Load timesheet ──────────────────────────────────────────────────────────
-
-  const loadTimesheet = useCallback(async () => {
-    try {
-      setLoading(true);
-      const apiMonth = selectedMonth + 1;
-      const res = await timesheetService.getOwn(apiMonth, selectedYear);
-      setTimesheet(res.data);
-      const loaded = res.data ? buildCellsFromEntries(res.data.entries) : {};
-      cellsRef.current = loaded;
-      setCells(loaded);
-    } catch (err: any) {
-      if (!err.message?.includes("404")) {
-        toast.error(err.message || "Failed to load timesheet");
-      }
-      setTimesheet(null);
-      setCells({});
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedMonth, selectedYear]);
+  // ── Load timesheet — stable effect, no double-call ─────────────────────────
 
   useEffect(() => {
-    loadTimesheet();
-  }, [loadTimesheet]);
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        const apiMonth = selectedMonth + 1;
+        const res = await timesheetService.getOwn(apiMonth, selectedYear);
+        if (cancelled) return;
+        setTimesheet(res.data);
+        const loaded = res.data ? buildCellsFromEntries(res.data.entries) : {};
+        cellsRef.current = loaded;
+        setCells(loaded);
+      } catch (err) {
+        if (cancelled) return;
+        const msg = getErrorMessage(err, "");
+        if (msg && !msg.includes("404")) toast.error(msg || "Failed to load timesheet");
+        setTimesheet(null);
+        setCells({});
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedMonth, selectedYear]);
 
   // ── Derived ─────────────────────────────────────────────────────────────────
 
@@ -281,8 +290,8 @@ export default function EmployeeTimesheetPage() {
       cellsRef.current = updated;
       setCells(updated);
       toast.success("Row saved");
-    } catch (err: any) {
-      toast.error(err.message || "Failed to save row");
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to save row"));
     }
   }
 
@@ -306,8 +315,8 @@ export default function EmployeeTimesheetPage() {
       cellsRef.current = saved2;
       setCells(saved2);
       toast.success("Timesheet saved as draft");
-    } catch (err: any) {
-      toast.error(err.message || "Failed to save draft");
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to save draft"));
     } finally {
       setSaving(false);
     }
@@ -332,8 +341,8 @@ export default function EmployeeTimesheetPage() {
         cellsRef.current = s1;
         setCells(s1);
         toast.success("Timesheet submitted!");
-      } catch (err: any) {
-        toast.error(err.message || "Failed to submit");
+      } catch (err) {
+        toast.error(getErrorMessage(err, "Failed to submit"));
       } finally {
         setSaving(false);
       }
@@ -351,8 +360,8 @@ export default function EmployeeTimesheetPage() {
       cellsRef.current = s2;
       setCells(s2);
       toast.success("Timesheet submitted! Your manager can now review it.");
-    } catch (err: any) {
-      toast.error(err.message || "Failed to submit timesheet");
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to submit timesheet"));
     } finally {
       setSaving(false);
     }
@@ -366,11 +375,20 @@ export default function EmployeeTimesheetPage() {
 
         {/* ── Header ── */}
         <div className="flex items-center justify-between mb-4">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">My Timesheet</h1>
-            <p className="text-muted-foreground text-sm mt-0.5">
-              Click any cell to edit. Fill worked hours to activate a row.
-            </p>
+          <div className="flex items-center gap-3">
+            <Button variant="outline" size="sm" onClick={() => navigate("/dashboard")} className="gap-1.5 shrink-0">
+              <ChevronLeft className="w-4 h-4" />
+              Projects
+            </Button>
+            <div>
+              <div className="flex items-center gap-2">
+                <FolderOpen className="w-4 h-4 text-[#217346]" />
+                <h1 className="text-xl font-bold tracking-tight">{decodeURIComponent(projectName)}</h1>
+              </div>
+              <p className="text-muted-foreground text-sm mt-0.5">
+                Click any cell to edit. Fill worked hours to activate a row.
+              </p>
+            </div>
           </div>
           <div className="flex items-center gap-3">
             <Select
@@ -378,9 +396,11 @@ export default function EmployeeTimesheetPage() {
               onValueChange={(v) => setSelectedMonth(Number(v))}
               disabled={isLocked || saving}
             >
-              <SelectTrigger className="w-44">
-                <Calendar className="w-4 h-4 mr-2 text-muted-foreground" />
-                <SelectValue />
+              <SelectTrigger className="w-48">
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-muted-foreground shrink-0" />
+                  <span>{MONTHS[selectedMonth]} {selectedYear}</span>
+                </div>
               </SelectTrigger>
               <SelectContent>
                 {MONTHS.map((m, idx) => (

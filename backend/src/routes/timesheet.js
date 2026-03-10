@@ -10,6 +10,7 @@ import { authenticate, checkActive, authorize } from '../middlewares/auth.js';
 import Timesheet from '../models/timesheet/Timesheet.js';
 import EmployeeManagerMapping from '../models/timesheet/EmployeeManagerMapping.js';
 import Employee from '../models/users/Employee.js';
+import User from '../models/users/User.js';
 
 const router = express.Router();
 const auth = [authenticate, checkActive];
@@ -31,8 +32,8 @@ router.get('/', ...auth, authorize(['EMPLOYEE']), async (req, res) => {
         const month = parseInt(req.query.month);
         const year = parseInt(req.query.year);
 
-        if (!month || !year || month < 1 || month > 12) {
-            return res.status(400).json({ error: 'Valid month (1-12) and year are required' });
+        if (!month || !year || month < 1 || month > 12 || year < 2000 || year > 2100) {
+            return res.status(400).json({ error: 'Valid month (1-12) and year (2000-2100) are required' });
         }
 
         const employee = await getEmployeeForUser(req.user);
@@ -211,7 +212,6 @@ router.get('/team', ...auth, authorize(['MANAGER', 'ADMINISTRATOR']), async (req
         const employeeIds = mappings.map(m => m.employee_id?._id).filter(Boolean);
 
         // Find matching User records for these employees (by official_email)
-        const User = (await import('../models/users/User.js')).default;
         const employeeEmails = mappings
             .map(m => m.employee_id?.official_email)
             .filter(Boolean);
@@ -306,7 +306,6 @@ router.get('/employee/:employeeId', ...auth, authorize(['MANAGER', 'ADMINISTRATO
         }
 
         // Find the EMPLOYEE user linked to this employee
-        const User = (await import('../models/users/User.js')).default;
         const empUser = await User.findOne({
             tenant_id: tenantId,
             email: employee.official_email,
