@@ -4,13 +4,14 @@ import { useAuth } from "@/contexts/AuthContext";
 import {
   Clock,
   Users,
-  Link2,
   LogOut,
   Menu,
   LayoutDashboard,
   Shield,
   ChevronRight,
   X,
+  ScrollText,
+  FolderOpen,
 } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -142,10 +143,17 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
               Operations
             </p>
             <SidebarLink
-              to="/timesheet/manager"
+              to="/projects"
+              icon={FolderOpen}
+              label="My Projects"
+              onClick={() => handleNavClick("/projects")}
+              exact={false}
+            />
+            <SidebarLink
+              to="/employees/manage"
               icon={Users}
-              label="Employee Timesheets"
-              onClick={() => handleNavClick("/timesheet/manager")}
+              label="My Employees"
+              onClick={() => handleNavClick("/employees/manage")}
             />
           </div>
         )}
@@ -162,10 +170,16 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
               onClick={() => handleNavClick("/timesheet/mapping?tab=managers")}
             />
             <SidebarLink
-              to="/timesheet/mapping?tab=mapping"
-              icon={Link2}
-              label="Employee Mapping"
-              onClick={() => handleNavClick("/timesheet/mapping?tab=mapping")}
+              to="/timesheet/mapping?tab=employees"
+              icon={Users}
+              label="Employees"
+              onClick={() => handleNavClick("/timesheet/mapping?tab=employees")}
+            />
+            <SidebarLink
+              to="/timesheet/mapping?tab=logs"
+              icon={ScrollText}
+              label="Activity Logs"
+              onClick={() => handleNavClick("/timesheet/mapping?tab=logs")}
             />
           </div>
         )}

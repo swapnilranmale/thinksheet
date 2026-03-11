@@ -56,11 +56,20 @@ export const authService = {
       { new_password, current_password }
     ),
 
-  createManager: (email: string, password: string, full_name: string, designation?: string) =>
+  createManager: (email: string, password: string, full_name: string, designation?: string, team_ids?: string[]) =>
     authApi.post<{ success: boolean; user: any }>("/create-manager", {
-      email, password, full_name, designation,
+      email, password, full_name, designation, team_ids,
     }),
 
   getManagers: () =>
     authApi.get<{ success: boolean; data: any[] }>("/managers"),
+
+  updateManager: (id: string, data: { team_ids?: string[]; designation?: string; full_name?: string }) =>
+    authApi.put<{ success: boolean; user: any }>(`/managers/${id}`, data),
+
+  resetPassword: (user_id: string) =>
+    authApi.post<{ success: boolean; message: string }>("/reset-password", { user_id }),
+
+  resetPasswordByEmail: (employee_email: string) =>
+    authApi.post<{ success: boolean; message: string }>("/reset-password", { employee_email }),
 };

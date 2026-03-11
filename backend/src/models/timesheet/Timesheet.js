@@ -2,9 +2,14 @@ import mongoose from 'mongoose';
 
 const timesheetEntrySchema = new mongoose.Schema({
     date: { type: Date, required: true },
-    tasks: { type: [String], required: true },
-    worked_hours: { type: Number, required: true, min: 0, max: 24 },
-    billable_hours: { type: Number, required: true, min: 0, max: 24 },
+    status: {
+        type: String,
+        enum: ['Working', 'On leave', 'Holiday', 'Extra Working'],
+        default: 'Working'
+    },
+    tasks: { type: [String], default: [] },
+    worked_hours: { type: Number, min: 0, max: 24, default: 0 },
+    billable_hours: { type: Number, min: 0, max: 24, default: 0 },
     completed_task: { type: Boolean, default: false },
     completed_task_description: { type: String, default: '' },
     unplanned_task: { type: Boolean, default: false },

@@ -31,6 +31,14 @@ const employeeSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         default: null
     },
+    team_id: {
+        type: String,
+        default: null
+    },
+    team_name: {
+        type: String,
+        default: ''
+    },
     is_active: {
         type: Boolean,
         default: true
