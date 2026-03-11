@@ -167,7 +167,8 @@ function ProjectsTab({ onProjectClick }: { onProjectClick: (proj: ResourceMaster
 // ── Validation helpers ────────────────────────────────────────────────────────
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const EMP_ID_RE = /^[A-Za-z0-9_-]+$/;
+const EMP_ID_RE = /^\d+$/;
+const NAME_RE = /^[A-Za-z\s.''-]+$/;
 
 function validateCreateFields(
   empId: string,
@@ -180,13 +181,15 @@ function validateCreateFields(
   if (!empId.trim()) {
     errors.emp_id = "Employee ID is required";
   } else if (!EMP_ID_RE.test(empId.trim())) {
-    errors.emp_id = "Only letters, numbers, hyphens and underscores allowed";
+    errors.emp_id = "Employee ID must be numeric (e.g. 340)";
   }
 
   if (!empName.trim()) {
     errors.emp_name = "Full name is required";
   } else if (empName.trim().length < 2) {
     errors.emp_name = "Name must be at least 2 characters";
+  } else if (!NAME_RE.test(empName.trim())) {
+    errors.emp_name = "Name can only contain letters, spaces, and hyphens";
   }
 
   if (!empEmail.trim()) {
@@ -208,6 +211,8 @@ function validateEditFields(empName: string): Record<string, string> {
     errors.emp_name = "Full name is required";
   } else if (empName.trim().length < 2) {
     errors.emp_name = "Name must be at least 2 characters";
+  } else if (!NAME_RE.test(empName.trim())) {
+    errors.emp_name = "Name can only contain letters, spaces, and hyphens";
   }
   return errors;
 }
@@ -259,7 +264,7 @@ export default function EmployeeManagementPage() {
       setLoading(true);
       const [empRes, allTeams] = await Promise.all([
         employeeService.getAll(),
-        streamlineService.getEngineeringTeams(),
+        streamlineService.getTeams(),
       ]);
       setEmployees(empRes.data);
 

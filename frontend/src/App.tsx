@@ -10,6 +10,7 @@ import ManagerTimesheetReviewPage from "./pages/ManagerTimesheetReviewPage";
 import EmployeeManagerMappingPage from "./pages/EmployeeManagerMappingPage";
 import EmployeeManagementPage from "./pages/EmployeeManagementPage";
 import ProjectDashboardPage from "./pages/ProjectDashboardPage";
+import AdminProjectsDashboardPage from "./pages/AdminProjectsDashboardPage";
 
 function RoleRedirect() {
   const { user, isLoading } = useAuth();
@@ -78,6 +79,14 @@ export default function App() {
         element={
           <ProtectedRoute roles={["ADMINISTRATOR"]}>
             <EmployeeManagerMappingPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/projects"
+        element={
+          <ProtectedRoute roles={["ADMINISTRATOR"]}>
+            <AdminProjectsDashboardPage />
           </ProtectedRoute>
         }
       />

@@ -256,10 +256,13 @@ export interface ResourceMasterEmployee {
   name: string;
   email: string;
   emp_id: string;
+  /** Streamline Resource ID, e.g. "UPID-26-18-1" */
+  resource_id: string;
   designation: string;
   team_name: string;
   start_from: string | null;
   end_date: string | null;
+  is_active: boolean;
 }
 
 export interface ResourceMasterProject {

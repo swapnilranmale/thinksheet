@@ -15,6 +15,7 @@
  */
 import express from 'express';
 import jwt from 'jsonwebtoken';
+import mongoose from 'mongoose';
 import { authenticate, checkActive, authorize } from '../middlewares/auth.js';
 import Employee from '../models/users/Employee.js';
 import User from '../models/users/User.js';
@@ -72,6 +73,146 @@ async function proxyGet(path, req, res) {
     }
 }
 
+/**
+ * Fetch ALL Streamline Employee Master records (paginated).
+ * Returns two lookup maps:
+ *   byId    — keyed by Streamline Employee Master _id string
+ *   byEmail — keyed by lowercase email
+ *
+ * The `actual_resource_emp_id` / `profile_id` on resource records are
+ * Streamline Employee Master _id values (NOT ThinkSheet IDs).
+ * This lookup resolves them to name + email so we can find/create ThinkSheet employees.
+ */
+async function fetchStreamlineEmployeeMasters(streamlineUrl, headers) {
+    const byId = {};
+    const byEmail = {};
+    // Streamline360 employee endpoint — try /api/employees first (primary), fallback to /api/employee_masters
+    const ENDPOINTS = ['/api/employees', '/api/employee_masters'];
+    for (const endpoint of ENDPOINTS) {
+        let page = 1;
+        const limit = 200;
+        let fetched = 0;
+        try {
+            while (true) {
+                const ctrl = new AbortController();
+                const to = setTimeout(() => ctrl.abort(), 15000);
+                let data;
+                try {
+                    const resp = await fetch(
+                        `${streamlineUrl}${endpoint}?page=${page}&limit=${limit}`,
+                        { headers, signal: ctrl.signal }
+                    );
+                    clearTimeout(to);
+                    if (!resp.ok) break; // endpoint doesn't exist — try next
+                    data = await resp.json();
+                } catch (e) { clearTimeout(to); break; }
+
+                // Support multiple response shapes: { employees: [] } | { data: [] } | { employee_masters: [] }
+                const recs = data.employees || data.data || data.employee_masters || [];
+                if (recs.length === 0) break;
+                for (const se of recs) {
+                    const id = String(se._id || '');
+                    const email = (se.official_email || se.email || se.work_email || '').toLowerCase().trim();
+                    if (id) byId[id] = se;
+                    if (email) byEmail[email] = se;
+                    fetched++;
+                }
+                const pg = data.pagination || {};
+                const totalPages = pg.pages || pg.totalPages || 1;
+                if (recs.length < limit || page >= totalPages) break;
+                page++;
+            }
+        } catch (err) {
+            console.warn(`[Streamline] Could not fetch from ${endpoint}:`, err.message);
+        }
+        if (fetched > 0) break; // got data — no need to try fallback endpoint
+    }
+    return { byId, byEmail };
+}
+
+/**
+ * Resolve employee data from a Streamline resource record.
+ *
+ * Resolution priority:
+ *  1. actual_resource_emp_id / actual_emp_id  → Streamline Employee Master by _id
+ *  2. profile_id / ttpl_id                    → Streamline Employee Master by _id (fallback)
+ *  3. Direct name/email fields on resource record
+ *  4. ThinkSheet User._id lookup → email → ThinkSheet Employee (last resort)
+ *
+ * Returns { empName, empEmail, empCode, designation } or null if unresolvable.
+ */
+function resolveResourceEmployee(r, slEmpById, slEmpByEmail, tsUserMap, tsEmpByEmail) {
+    // Streamline360 resource record field names:
+    //   actual_resource_emp_ttpl_id — the ACTUAL worker (e.g. Nilesh Gorhe)  ← primary
+    //   profile_ttpl_id             — the billing profile (e.g. Swapnil Ranmale) ← fallback
+    // These may be a plain ID string or a populated object { _id, name, email }.
+    const rawActual = r.actual_resource_emp_ttpl_id || r.actual_resource_emp_id || r.actual_emp_id || null;
+    const rawProf   = r.profile_ttpl_id || r.profile_id || r.ttpl_id || r.employee_profile_id || null;
+
+    const actualId = rawActual && typeof rawActual === 'object'
+        ? String(rawActual._id || '')
+        : String(rawActual || '');
+    const profId = rawProf && typeof rawProf === 'object'
+        ? String(rawProf._id || '')
+        : String(rawProf || '');
+
+    // If the field was a populated object, extract inline name/email as high-priority fallback
+    const actualObjName  = (rawActual && typeof rawActual === 'object')
+        ? (rawActual.full_name || rawActual.name || rawActual.employee_name || '').trim() : '';
+    const actualObjEmail = (rawActual && typeof rawActual === 'object')
+        ? (rawActual.email || rawActual.official_email || '').toLowerCase().trim() : '';
+
+    let slEmp = (actualId && slEmpById[actualId])
+        || (profId && slEmpById[profId])
+        || null;
+
+    // Try direct fields on resource record.
+    // Streamline360 uses: actual_resource (worker name), profile_resource (billing name)
+    const directName  = (r.actual_resource || r.resource_name || r.employee_name || r.user_id?.full_name || r.user_id?.name || '').trim();
+    const directEmail = (r.resource_email  || r.employee_email || r.user_id?.email || '').toLowerCase().trim();
+
+    // Try Streamline Employee Master by email (populated object email takes priority over direct fields)
+    if (!slEmp && actualObjEmail) slEmp = slEmpByEmail[actualObjEmail] || null;
+    if (!slEmp && directEmail) slEmp = slEmpByEmail[directEmail] || null;
+
+    // Try ThinkSheet User lookup (in case TTPL IDs are ThinkSheet User _ids)
+    let tsEmpFromUser = null;
+    if (!slEmp) {
+        const tsUser = (actualId && tsUserMap[actualId]) || (profId && tsUserMap[profId]) || null;
+        if (tsUser) {
+            const userEmail = tsUser.email?.toLowerCase().trim();
+            if (userEmail) tsEmpFromUser = tsEmpByEmail[userEmail] || null;
+            if (!slEmp && userEmail) slEmp = slEmpByEmail[userEmail] || null;
+        }
+    }
+
+    const empName = (
+        slEmp?.full_name || slEmp?.name || slEmp?.employee_name ||
+        actualObjName || directName ||
+        tsEmpFromUser?.employee_name || ''
+    ).trim();
+
+    const empEmail = (
+        slEmp?.official_email || slEmp?.email || slEmp?.work_email ||
+        actualObjEmail || directEmail ||
+        tsEmpFromUser?.official_email || ''
+    ).toLowerCase().trim();
+
+    const empCode = String(
+        slEmp?.emp_id || slEmp?.employee_id || slEmp?.unique_id ||
+        r.employee_code || r.resource_code || r.emp_id ||
+        tsEmpFromUser?.unique_id || r.unique_id || ''
+    ).trim();
+
+    const designation = (
+        slEmp?.designation || slEmp?.job_title ||
+        r.designation || r.resource_designation ||
+        tsEmpFromUser?.designation || ''
+    ).trim();
+
+    return { empName, empEmail, empCode, designation };
+}
+
 // ── GET /api/streamline/resources ────────────────────────────────────────────
 router.get('/resources', authenticate, checkActive, (req, res) =>
     proxyGet('/api/invoicing/resources', req, res)
@@ -102,6 +243,12 @@ router.get('/clients', authenticate, checkActive, (req, res) =>
 // Full Resource Master (same endpoint as /resources, exposed explicitly for clarity)
 router.get('/resource-master', authenticate, checkActive, (req, res) =>
     proxyGet('/api/invoicing/resources', req, res)
+);
+
+// ── GET /api/streamline/employee-masters ─────────────────────────────────────
+// Streamline360 Employee Master list — used to get fresh employee data during sync
+router.get('/employee-masters', authenticate, checkActive, (req, res) =>
+    proxyGet('/api/employee_masters', req, res)
 );
 
 // ── GET /api/streamline/projects-with-dates ────────────────────────────────
@@ -207,6 +354,44 @@ router.get('/my-resource-projects', authenticate, checkActive, authorize(['MANAG
             page++;
         }
 
+        // ── Build lookup maps for employee resolution ─────────────────────────
+        //
+        // actual_resource_emp_id / profile_id on resource records are Streamline
+        // Employee Master _id values. We build three lookup maps:
+        //   1. Streamline Employee Master by _id  (primary path)
+        //   2. ThinkSheet User by _id             (fallback — in case IDs are ThinkSheet User IDs)
+        //   3. ThinkSheet Employee by email        (used after resolving email from User)
+
+        // 1. Fetch Streamline Employee Masters (resolves TTPL IDs → name/email)
+        const { byId: slEmpById, byEmail: slEmpByEmail } =
+            await fetchStreamlineEmployeeMasters(streamlineUrl, headers);
+
+        // 2 & 3. Collect all candidate IDs → lookup ThinkSheet Users + Employees
+        const candidateIds = new Set();
+        for (const r of allResources) {
+            const rawA = r.actual_resource_emp_ttpl_id || r.actual_resource_emp_id || r.actual_emp_id || null;
+            const rawP = r.profile_ttpl_id || r.profile_id || r.ttpl_id || r.employee_profile_id || null;
+            const aid = rawA && typeof rawA === 'object' ? String(rawA._id || '') : String(rawA || '');
+            const pid = rawP && typeof rawP === 'object' ? String(rawP._id || '') : String(rawP || '');
+            if (aid && mongoose.Types.ObjectId.isValid(aid)) candidateIds.add(aid);
+            if (pid && mongoose.Types.ObjectId.isValid(pid)) candidateIds.add(pid);
+        }
+
+        const tsUserMap = {};      // ThinkSheet User by _id
+        const tsEmpByEmail = {};   // ThinkSheet Employee by email
+        if (candidateIds.size > 0) {
+            const tsUsers = await User.find({ _id: { $in: [...candidateIds] } })
+                .select('_id email full_name').lean();
+            tsUsers.forEach(u => { tsUserMap[u._id.toString()] = u; });
+
+            const userEmails = tsUsers.map(u => u.email?.toLowerCase()).filter(Boolean);
+            if (userEmails.length > 0) {
+                const tsEmps = await Employee.find({ official_email: { $in: userEmails } })
+                    .select('_id employee_name official_email designation unique_id team_name').lean();
+                tsEmps.forEach(e => { tsEmpByEmail[e.official_email] = e; });
+            }
+        }
+
         // Group resources by project, filtered to manager's teams
         const projectMap = {};
 
@@ -257,22 +442,26 @@ router.get('/my-resource-projects', authenticate, checkActive, authorize(['MANAG
                 }
             }
 
-            // Normalize employee info
-            const empName = (r.resource_name || r.employee_name || r.user_id?.full_name || r.user_id?.name || '').trim();
-            const empEmail = (r.resource_email || r.employee_email || r.user_id?.email || '').toLowerCase().trim();
-            const empCode = String(r.employee_code || r.resource_code || r.emp_id || r.unique_id || '').trim();
-            const designation = (r.designation || r.resource_designation || '').trim();
-            const teamName = (teamObj?.team_name || r.team_name || '').trim();
+            // Resolve employee using all available lookup maps
+            const { empName, empEmail, empCode, designation } =
+                resolveResourceEmployee(r, slEmpById, slEmpByEmail, tsUserMap, tsEmpByEmail);
 
-            if (empName || empEmail) {
+            const teamName = (teamObj?.team_name || r.team || r.team_name || '').trim();
+            // Streamline Resource ID (e.g. "UPID-26-18-1") — field is resource_id on the record
+            const resourceId = String(r.resource_id || r.unique_id || '').trim();
+
+            // Include the resource if we have any identifying information
+            if (empName || empEmail || resourceId) {
                 projectMap[projectId].resources.push({
                     name: empName,
                     email: empEmail,
                     emp_id: empCode,
+                    resource_id: resourceId,
                     designation,
                     team_name: teamName,
                     start_from: r.start_from || null,
                     end_date: r.end_date || null,
+                    is_active: r.active === true || (String(r.status || r.active_status || 'ACTIVE')).toUpperCase() === 'ACTIVE',
                 });
             }
         }
@@ -362,7 +551,47 @@ router.post('/sync', authenticate, checkActive, authorize(['ADMINISTRATOR']), as
         const managerByEmail = {};
         managers.forEach(m => { managerByEmail[m.email.toLowerCase()] = m._id; });
 
-        // ── Step 3: Process each resource record ──────────────────────────────
+        // ── Step 3: Build employee lookup maps ────────────────────────────────
+        //
+        // actual_resource_emp_id / profile_id are Streamline Employee Master _ids.
+        // We use three lookup strategies (in priority order):
+        //   1. Streamline Employee Master by _id  → authoritative name/email
+        //   2. ThinkSheet User by _id              → get email → find Employee
+        //   3. Direct fields on resource record    → last resort
+
+        // Fetch Streamline Employee Masters (primary resolution source)
+        const { byId: slEmpById, byEmail: slEmpByEmail } =
+            await fetchStreamlineEmployeeMasters(streamlineUrl, headers);
+
+        console.log(`[Sync] Streamline Employee Masters fetched: ${Object.keys(slEmpById).length}`);
+
+        // Collect candidate IDs for ThinkSheet User fallback lookup
+        const syncCandidateIds = new Set();
+        for (const r of allResources) {
+            const rawA = r.actual_resource_emp_ttpl_id || r.actual_resource_emp_id || r.actual_emp_id || null;
+            const rawP = r.profile_ttpl_id || r.profile_id || r.ttpl_id || r.employee_profile_id || null;
+            const aid = rawA && typeof rawA === 'object' ? String(rawA._id || '') : String(rawA || '');
+            const pid = rawP && typeof rawP === 'object' ? String(rawP._id || '') : String(rawP || '');
+            if (aid && mongoose.Types.ObjectId.isValid(aid)) syncCandidateIds.add(aid);
+            if (pid && mongoose.Types.ObjectId.isValid(pid)) syncCandidateIds.add(pid);
+        }
+
+        const syncTsUserMap = {};
+        const syncTsEmpByEmail = {};
+        if (syncCandidateIds.size > 0) {
+            const tsUsers = await User.find({ _id: { $in: [...syncCandidateIds] } })
+                .select('_id email full_name').lean();
+            tsUsers.forEach(u => { syncTsUserMap[u._id.toString()] = u; });
+
+            const userEmails = tsUsers.map(u => u.email?.toLowerCase()).filter(Boolean);
+            if (userEmails.length > 0) {
+                const tsEmps = await Employee.find({ official_email: { $in: userEmails }, tenant_id: tenantId })
+                    .select('_id employee_name official_email designation unique_id').lean();
+                tsEmps.forEach(e => { syncTsEmpByEmail[e.official_email] = e; });
+            }
+        }
+
+        // ── Step 4: Process each resource record ──────────────────────────────
         const results = {
             total_resources: allResources.length,
             employees_synced: 0,
@@ -372,27 +601,9 @@ router.post('/sync', authenticate, checkActive, authorize(['ADMINISTRATOR']), as
 
         for (const r of allResources) {
             try {
-                // ── Extract employee fields (handle multiple possible field names) ──
-                const empName = (
-                    r.resource_name ||
-                    r.employee_name ||
-                    r.user_id?.full_name ||
-                    r.user_id?.name ||
-                    ''
-                ).trim();
-
-                const empEmail = (
-                    r.resource_email ||
-                    r.employee_email ||
-                    r.user_id?.email ||
-                    ''
-                ).toLowerCase().trim();
-
-                const empCode = String(
-                    r.employee_code || r.resource_code || r.emp_id || r.unique_id || ''
-                ).trim();
-
-                const designation = (r.designation || r.resource_designation || '').trim();
+                // Resolve employee using all available lookup maps
+                const { empName, empEmail, empCode, designation } =
+                    resolveResourceEmployee(r, slEmpById, slEmpByEmail, syncTsUserMap, syncTsEmpByEmail);
 
                 if (!empEmail || !empName) {
                     results.errors.push({ resource_id: r._id, reason: 'Missing employee name or email' });

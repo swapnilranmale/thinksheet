@@ -176,6 +176,12 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
               onClick={() => handleNavClick("/timesheet/mapping?tab=employees")}
             />
             <SidebarLink
+              to="/timesheet/mapping?tab=projects"
+              icon={FolderOpen}
+              label="Projects"
+              onClick={() => handleNavClick("/timesheet/mapping?tab=projects")}
+            />
+            <SidebarLink
               to="/timesheet/mapping?tab=logs"
               icon={ScrollText}
               label="Activity Logs"
