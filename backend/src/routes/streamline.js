@@ -25,19 +25,25 @@ const router = express.Router();
 
 // Read lazily so dotenv in index.js has time to load before these are evaluated
 const getStreamlineConfig = () => ({
-    url: process.env.STREAMLINE_URL || 'http://localhost:5000',
-    jwtSecret: process.env.STREAMLINE_JWT_SECRET || 'your-super-secret-jwt-key-change-this-in-production-2024',
-    tenantId: process.env.STREAMLINE_TENANT_ID || 'thinkitive_inc',
-    serviceUserId: process.env.STREAMLINE_SERVICE_USER_ID || '697a0ea239c5bb2c05498004',
+    url: process.env.STREAMLINE_URL,
+    jwtSecret: process.env.STREAMLINE_JWT_SECRET,
+    tenantId: process.env.STREAMLINE_TENANT_ID,
+    serviceUserId: process.env.STREAMLINE_SERVICE_USER_ID,
+    serviceEmail: process.env.STREAMLINE_SERVICE_EMAIL,
 });
 
-/** Generate a short-lived Streamline service token using a real Streamline user ID */
+/** Generate a short-lived Streamline service token (expires in 1 hour) */
 function makeStreamlineToken() {
-    const { jwtSecret, tenantId, serviceUserId } = getStreamlineConfig();
+    const { jwtSecret, tenantId, serviceUserId, serviceEmail } = getStreamlineConfig();
+
+    if (!jwtSecret || !serviceUserId || !serviceEmail) {
+        throw new Error('Missing required Streamline configuration: STREAMLINE_JWT_SECRET, STREAMLINE_SERVICE_USER_ID, or STREAMLINE_SERVICE_EMAIL');
+    }
+
     return jwt.sign(
         {
             userId: serviceUserId,
-            email: 'ghanshyam@thinkitive.com',
+            email: serviceEmail,
             role: 'ADMINISTRATOR',
             tenant_id: tenantId,
         },
