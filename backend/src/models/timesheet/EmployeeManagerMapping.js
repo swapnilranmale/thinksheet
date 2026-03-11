@@ -16,13 +16,22 @@ const employeeManagerMappingSchema = new mongoose.Schema({
     manager_id: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
-        required: true
+        default: null          // Optional — admin assigns manually, or auto-matched during Streamline sync
     },
     employee_id: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Employee',
         required: true
     },
+    // Client Master data (populated from Streamline Resource Master sync)
+    client_id: { type: String, default: null },
+    client_name: { type: String, default: '' },
+    // Resource Intimation dates (populated from Streamline Resource Master sync)
+    resource_start_date: { type: Date, default: null },
+    resource_end_date: { type: Date, default: null },
+    // Sync tracking
+    synced_from_streamline: { type: Boolean, default: false },
+    synced_at: { type: Date, default: null },
     mapped_by: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',

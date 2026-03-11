@@ -10,6 +10,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { authenticate, checkActive, authorize } from '../middlewares/auth.js';
 import User from '../models/users/User.js';
+import { logActivity } from '../utils/logActivity.js';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'secret';
@@ -186,7 +187,7 @@ router.post('/change-password', authenticate, async (req, res) => {
 // ── POST /api/auth/create-manager — ADMINISTRATOR creates MANAGER account ────
 router.post('/create-manager', authenticate, checkActive, authorize(['ADMINISTRATOR']), async (req, res) => {
     try {
-        const { email, password, full_name, designation } = req.body;
+        const { email, password, full_name, designation, team_ids } = req.body;
 
         if (!email || !password || !full_name) {
             return res.status(400).json({ error: 'email, password and full_name are required' });
@@ -204,6 +205,7 @@ router.post('/create-manager', authenticate, checkActive, authorize(['ADMINISTRA
             role: 'MANAGER',
             tenant_id: TENANT_ID,
             designation: designation || '',
+            team_ids: Array.isArray(team_ids) ? team_ids : [],
             is_active: true,
             must_change_password: false,
             permissions: {
@@ -216,6 +218,17 @@ router.post('/create-manager', authenticate, checkActive, authorize(['ADMINISTRA
             }
         });
 
+        await logActivity({
+            tenantId: TENANT_ID,
+            action: 'MANAGER_CREATED',
+            performedBy: req.user,
+            targetType: 'MANAGER',
+            targetName: full_name,
+            targetEmail: email.toLowerCase(),
+            details: `Created manager account for ${full_name}`,
+            metadata: { team_ids: user.team_ids, designation: user.designation }
+        });
+
         res.status(201).json({
             success: true,
             user: {
@@ -223,7 +236,8 @@ router.post('/create-manager', authenticate, checkActive, authorize(['ADMINISTRA
                 email: user.email,
                 full_name: user.full_name,
                 role: user.role,
-                designation: user.designation
+                designation: user.designation,
+                team_ids: user.team_ids
             }
         });
     } catch (err) {
@@ -238,9 +252,135 @@ router.get('/managers', authenticate, checkActive, authorize(['ADMINISTRATOR']),
             role: 'MANAGER',
             tenant_id: TENANT_ID,
             is_deleted: { $ne: true }
-        }).select('_id full_name email designation is_active').lean();
+        }).select('_id full_name email designation is_active team_ids').lean();
 
         res.json({ success: true, data: managers });
+    } catch (err) {
+        res.status(500).json({ error: 'Server error', message: err.message });
+    }
+});
+
+// ── PUT /api/auth/managers/:id — update manager (team assignments, etc.) ─────
+router.put('/managers/:id', authenticate, checkActive, authorize(['ADMINISTRATOR']), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { team_ids, designation, full_name } = req.body;
+
+        const manager = await User.findOne({
+            _id: id,
+            role: 'MANAGER',
+            tenant_id: TENANT_ID,
+            is_deleted: { $ne: true }
+        });
+
+        if (!manager) {
+            return res.status(404).json({ error: 'Manager not found' });
+        }
+
+        if (Array.isArray(team_ids)) manager.team_ids = team_ids;
+        if (designation !== undefined) manager.designation = designation;
+        if (full_name) manager.full_name = full_name;
+        await manager.save();
+
+        await logActivity({
+            tenantId: TENANT_ID,
+            action: 'MANAGER_UPDATED',
+            performedBy: req.user,
+            targetType: 'MANAGER',
+            targetName: manager.full_name,
+            targetEmail: manager.email,
+            details: `Updated manager ${manager.full_name}`,
+            metadata: { team_ids: manager.team_ids, designation: manager.designation }
+        });
+
+        res.json({
+            success: true,
+            user: {
+                _id: manager._id,
+                email: manager.email,
+                full_name: manager.full_name,
+                designation: manager.designation,
+                team_ids: manager.team_ids
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ error: 'Server error', message: err.message });
+    }
+});
+
+// ── POST /api/auth/reset-password — admin resets manager, manager resets employee
+router.post('/reset-password', authenticate, checkActive, authorize(['ADMINISTRATOR', 'MANAGER']), async (req, res) => {
+    try {
+        const { user_id, employee_email } = req.body;
+
+        if (!user_id && !employee_email) {
+            return res.status(400).json({ error: 'user_id or employee_email is required' });
+        }
+
+        let target;
+        if (user_id) {
+            target = await User.findOne({
+                _id: user_id,
+                tenant_id: TENANT_ID,
+                is_deleted: { $ne: true }
+            });
+        } else {
+            target = await User.findOne({
+                email: employee_email.toLowerCase(),
+                tenant_id: TENANT_ID,
+                is_deleted: { $ne: true }
+            });
+        }
+
+        if (!target) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        // ADMINISTRATOR can only reset MANAGER passwords
+        if (req.user.role === 'ADMINISTRATOR') {
+            if (target.role !== 'MANAGER') {
+                return res.status(403).json({ error: 'Administrators can only reset manager passwords' });
+            }
+        }
+
+        // MANAGER can only reset EMPLOYEE passwords within their teams
+        if (req.user.role === 'MANAGER') {
+            if (target.role !== 'EMPLOYEE') {
+                return res.status(403).json({ error: 'Managers can only reset employee passwords' });
+            }
+
+            // Verify employee belongs to manager's teams
+            const managerUser = await User.findById(req.user._id).lean();
+            const managerTeamIds = managerUser?.team_ids || [];
+
+            // Find the Employee record to check team_id
+            const Employee = (await import('../models/users/Employee.js')).default;
+            const employee = await Employee.findOne({
+                official_email: target.email,
+                tenant_id: TENANT_ID,
+                is_active: true
+            }).lean();
+
+            if (!employee || !employee.team_id || !managerTeamIds.includes(employee.team_id)) {
+                return res.status(403).json({ error: 'Access denied: employee is not in your assigned teams' });
+            }
+        }
+
+        target.password = 'Think@2026';
+        target.must_change_password = true;
+        await target.save();
+
+        await logActivity({
+            tenantId: TENANT_ID,
+            action: target.role === 'MANAGER' ? 'MANAGER_PASSWORD_RESET' : 'EMPLOYEE_PASSWORD_RESET',
+            performedBy: req.user,
+            targetType: target.role === 'MANAGER' ? 'MANAGER' : 'EMPLOYEE',
+            targetName: target.full_name,
+            targetEmail: target.email,
+            details: `Password reset for ${target.full_name}`
+        });
+
+        res.json({ success: true, message: 'Password reset successfully. New password: Think@2026' });
     } catch (err) {
         res.status(500).json({ error: 'Server error', message: err.message });
     }

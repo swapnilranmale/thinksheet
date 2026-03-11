@@ -11,18 +11,31 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Clock,
   Send,
   Save,
   Calendar,
   CheckCircle2,
   Loader2,
-  Check,
   ChevronLeft,
+  ChevronRight,
   FolderOpen,
+  Undo2,
+  Pencil,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
-import { timesheetService, Timesheet, TimesheetEntry } from "@/services/timesheet";
+import { timesheetService, Timesheet, TimesheetEntry, DayStatus } from "@/services/timesheet";
 import { getErrorMessage } from "@/lib/api";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -32,6 +45,10 @@ const MONTHS = [
   "July", "August", "September", "October", "November", "December",
 ];
 
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+const STATUS_OPTIONS: DayStatus[] = ["Working", "On leave", "Holiday", "Extra Working"];
+
 const NOW = new Date();
 const CURRENT_YEAR = NOW.getFullYear();
 const CURRENT_MONTH = NOW.getMonth(); // 0-indexed
@@ -40,7 +57,8 @@ const CURRENT_MONTH = NOW.getMonth(); // 0-indexed
 
 type CellEntry = {
   _id?: string;
-  tasks: string;          // newline-separated, stored/displayed like completion note
+  status: DayStatus;
+  tasks: string;
   worked_hours: number;
   billable_hours: number;
   actual_hours: number;
@@ -48,16 +66,31 @@ type CellEntry = {
   completed_task_description: string;
   unplanned_task: boolean;
   comments: string;
-  saved?: boolean;        // true = row persisted to backend
+  saved?: boolean;
 };
 
 type CellsMap = Record<string, CellEntry>; // keyed by "YYYY-MM-DD"
 
-function emptyCell(): CellEntry {
+function isWeekend(d: Date) {
+  const dow = d.getDay();
+  return dow === 0 || dow === 6;
+}
+
+function defaultStatus(d: Date): DayStatus {
+  return isWeekend(d) ? "Holiday" : "Working";
+}
+
+function defaultBillable(status: DayStatus): number {
+  return status === "Working" || status === "Extra Working" ? 8 : 0;
+}
+
+function emptyCell(d?: Date): CellEntry {
+  const st = d ? defaultStatus(d) : "Working";
   return {
+    status: st,
     tasks: "",
-    worked_hours: 0,
-    billable_hours: 0,
+    worked_hours: defaultBillable(st),
+    billable_hours: defaultBillable(st),
     actual_hours: 0,
     completed_task: false,
     completed_task_description: "",
@@ -67,13 +100,22 @@ function emptyCell(): CellEntry {
   };
 }
 
-function buildCellsFromEntries(entries: TimesheetEntry[]): CellsMap {
+function buildCellsFromEntries(entries: TimesheetEntry[], days: Date[]): CellsMap {
   const map: CellsMap = {};
+
+  // First seed all days with defaults
+  for (const d of days) {
+    const key = toDateKey(d);
+    map[key] = emptyCell(d);
+  }
+
+  // Then overlay saved entries
   for (const e of entries) {
     const key = e.date?.slice(0, 10);
-    if (!key) continue;
+    if (!key || !map[key]) continue;
     map[key] = {
       _id: e._id,
+      status: e.status || map[key].status,
       tasks: Array.isArray(e.tasks) ? e.tasks.filter(Boolean).join("\n") : (e.tasks ?? ""),
       worked_hours: e.worked_hours ?? 0,
       billable_hours: e.billable_hours ?? 0,
@@ -89,7 +131,6 @@ function buildCellsFromEntries(entries: TimesheetEntry[]): CellsMap {
 }
 
 function getDaysInMonth(year: number, month: number): Date[] {
-  // month is 0-indexed
   const days: Date[] = [];
   const total = new Date(year, month + 1, 0).getDate();
   for (let d = 1; d <= total; d++) {
@@ -105,11 +146,6 @@ function toDateKey(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-function isWeekend(d: Date) {
-  const dow = d.getDay();
-  return dow === 0 || dow === 6;
-}
-
 function isToday(d: Date) {
   const t = new Date();
   return d.getFullYear() === t.getFullYear() &&
@@ -117,53 +153,26 @@ function isToday(d: Date) {
     d.getDate() === t.getDate();
 }
 
-// ── Inline number input ────────────────────────────────────────────────────────
+// ── Status colors ──────────────────────────────────────────────────────────────
 
-function NumInput({
-  value,
-  onChange,
-  disabled,
-}: {
-  value: number;
-  onChange: (v: number) => void;
-  disabled: boolean;
-}) {
-  const [raw, setRaw] = useState(value === 0 ? "" : String(value));
-  const ref = useRef<HTMLInputElement>(null);
-
-  // sync when parent resets
-  useEffect(() => {
-    setRaw(value === 0 ? "" : String(value));
-  }, [value]);
-
-  if (disabled) {
-    return (
-      <span className="text-right font-mono w-14 block text-gray-700">
-        {value || "—"}
-      </span>
-    );
+function statusRowBg(status: DayStatus, today: boolean): string {
+  if (today) return "bg-amber-50";
+  switch (status) {
+    case "Holiday": return "bg-red-50";
+    case "On leave": return "bg-orange-50";
+    case "Extra Working": return "bg-blue-50";
+    default: return "bg-white";
   }
+}
 
-  return (
-    <input
-      ref={ref}
-      type="number"
-      min={0}
-      max={24}
-      step={0.5}
-      value={raw}
-      placeholder="0"
-      onChange={(e) => {
-        setRaw(e.target.value);
-        const n = parseFloat(e.target.value);
-        onChange(isNaN(n) ? 0 : n);
-      }}
-      onBlur={() => {
-        if (raw === "") setRaw("");
-      }}
-      className="w-14 text-right font-mono bg-transparent border-0 focus:bg-white focus:ring-1 focus:ring-blue-400 rounded-sm outline-none px-1 py-0.5 text-xs"
-    />
-  );
+function statusBadgeClass(status: DayStatus): string {
+  switch (status) {
+    case "Working": return "bg-green-100 text-green-700 border-green-200";
+    case "Holiday": return "bg-red-100 text-red-600 border-red-200";
+    case "On leave": return "bg-orange-100 text-orange-600 border-orange-200";
+    case "Extra Working": return "bg-blue-100 text-blue-600 border-blue-200";
+    default: return "bg-gray-100 text-gray-600 border-gray-200";
+  }
 }
 
 // ── Component ──────────────────────────────────────────────────────────────────
@@ -174,26 +183,39 @@ export default function EmployeeTimesheetPage() {
   const projectName = searchParams.get("projectName") ?? "Timesheet";
 
   const [selectedMonth, setSelectedMonth] = useState(CURRENT_MONTH);
-  const selectedYear = CURRENT_YEAR;
+  const [selectedYear, setSelectedYear] = useState(CURRENT_YEAR);
+
+  // Submit confirmation
+  const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false);
+  const [submitWarnings, setSubmitWarnings] = useState<string[]>([]);
 
   const [timesheet, setTimesheet] = useState<Timesheet | null>(null);
   const [cells, setCells] = useState<CellsMap>({});
   const cellsRef = useRef<CellsMap>({});
+  const undoStackRef = useRef<CellsMap[]>([]);
+  const [canUndo, setCanUndo] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  // ── Load timesheet — stable effect, no double-call ─────────────────────────
+  const days = getDaysInMonth(selectedYear, selectedMonth);
+
+  // ── Load timesheet ─────────────────────────────────────────────────────────
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         setLoading(true);
+        undoStackRef.current = [];
+        setCanUndo(false);
         const apiMonth = selectedMonth + 1;
         const res = await timesheetService.getOwn(apiMonth, selectedYear);
         if (cancelled) return;
         setTimesheet(res.data);
-        const loaded = res.data ? buildCellsFromEntries(res.data.entries) : {};
+        const loaded = buildCellsFromEntries(
+          res.data?.entries ?? [],
+          getDaysInMonth(selectedYear, selectedMonth)
+        );
         cellsRef.current = loaded;
         setCells(loaded);
       } catch (err) {
@@ -201,7 +223,9 @@ export default function EmployeeTimesheetPage() {
         const msg = getErrorMessage(err, "");
         if (msg && !msg.includes("404")) toast.error(msg || "Failed to load timesheet");
         setTimesheet(null);
-        setCells({});
+        const fresh = buildCellsFromEntries([], getDaysInMonth(selectedYear, selectedMonth));
+        cellsRef.current = fresh;
+        setCells(fresh);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -209,24 +233,18 @@ export default function EmployeeTimesheetPage() {
     return () => { cancelled = true; };
   }, [selectedMonth, selectedYear]);
 
-  // ── Derived ─────────────────────────────────────────────────────────────────
+  // ── Derived ───────────────────────────────────────────────────────────────
 
   const status = timesheet?.status ?? "draft";
   const isLocked = status === "submitted";
 
-  const days = getDaysInMonth(selectedYear, selectedMonth);
-
-  const activeEntries = Object.entries(cells).filter(
-    ([, c]) => c.worked_hours > 0
+  const workingEntries = Object.entries(cells).filter(
+    ([, c]) => c.status === "Working" || c.status === "Extra Working"
   );
+  const totalBillable = Object.values(cells).reduce((s, c) => s + c.billable_hours, 0);
+  const totalWorked = workingEntries.reduce((s, [, c]) => s + c.worked_hours, 0);
 
-  const totalWorked = activeEntries.reduce((s, [, c]) => s + c.worked_hours, 0);
-  const totalBillable = activeEntries.reduce((s, [, c]) => s + c.billable_hours, 0);
-  const totalActual = activeEntries.reduce((s, [, c]) => s + c.actual_hours, 0);
-  const completedCount = activeEntries.filter(([, c]) => c.completed_task).length;
-  const unplannedCount = activeEntries.filter(([, c]) => c.unplanned_task).length;
-
-  // ── Cell mutators ───────────────────────────────────────────────────────────
+  // ── Cell mutators ─────────────────────────────────────────────────────────
 
   function getCell(dateKey: string): CellEntry {
     return cells[dateKey] ?? emptyCell();
@@ -234,71 +252,73 @@ export default function EmployeeTimesheetPage() {
 
   function patchCell(dateKey: string, patch: Partial<CellEntry>) {
     setCells((prev) => {
-      const next = {
-        ...prev,
-        [dateKey]: { ...(prev[dateKey] ?? emptyCell()), ...patch },
-      };
+      const existing = prev[dateKey] ?? emptyCell();
+      const updated = { ...existing, ...patch };
+
+      // Auto-adjust billable hours when status changes
+      if (patch.status && patch.status !== existing.status) {
+        const newBillable = defaultBillable(patch.status);
+        updated.billable_hours = newBillable;
+        updated.worked_hours = newBillable;
+      }
+
+      // Push current state to undo stack (limit to 50)
+      undoStackRef.current = [...undoStackRef.current.slice(-49), prev];
+      setCanUndo(true);
+
+      const next = { ...prev, [dateKey]: updated };
       cellsRef.current = next;
       return next;
     });
   }
 
-  // ── Save / Submit ───────────────────────────────────────────────────────────
+  function handleUndo() {
+    const stack = undoStackRef.current;
+    if (stack.length === 0) return;
+    const previous = stack[stack.length - 1];
+    undoStackRef.current = stack.slice(0, -1);
+    setCanUndo(undoStackRef.current.length > 0);
+    cellsRef.current = previous;
+    setCells(previous);
+  }
+
+  async function handleRecall() {
+    if (!timesheet) return;
+    setSaving(true);
+    try {
+      const res = await timesheetService.recall(timesheet._id);
+      setTimesheet(res.data);
+      undoStackRef.current = [];
+      setCanUndo(false);
+      toast.success("Timesheet reopened for editing.");
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to recall timesheet"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // ── Save / Submit ─────────────────────────────────────────────────────────
 
   function buildEntriesFromCells(cellsSnapshot: CellsMap): Omit<TimesheetEntry, "_id">[] {
-    return Object.entries(cellsSnapshot)
-      .filter(([, c]) => c.worked_hours > 0)
-      .map(([dateKey, c]) => ({
-        date: dateKey,
-        tasks: c.tasks.split("\n").map((t) => t.trim()).filter(Boolean),
-        worked_hours: c.worked_hours,
-        billable_hours: c.billable_hours,
-        actual_hours: c.actual_hours,
-        completed_task: c.completed_task,
-        completed_task_description: c.completed_task_description,
-        unplanned_task: c.unplanned_task,
-        comments: c.comments,
-      }));
-  }
-
-  function buildEntries(): Omit<TimesheetEntry, "_id">[] {
-    return buildEntriesFromCells(cells);
-  }
-
-  async function handleSaveRow(dateKey: string) {
-    // Always read from ref — never stale, no async tricks needed
-    const currentCells = cellsRef.current;
-    const cell = currentCells[dateKey] ?? emptyCell();
-
-    if (!cell.worked_hours) {
-      toast.error("Please enter worked hours before saving this row.");
-      return;
-    }
-
-    const allEntries = buildEntriesFromCells(currentCells);
-
-    try {
-      const apiMonth = selectedMonth + 1;
-      let res;
-      if (!timesheet) {
-        res = await timesheetService.create(apiMonth, selectedYear, allEntries);
-      } else {
-        res = await timesheetService.update(timesheet._id, allEntries);
-      }
-      setTimesheet(res.data);
-      const updated = buildCellsFromEntries(res.data.entries);
-      cellsRef.current = updated;
-      setCells(updated);
-      toast.success("Row saved");
-    } catch (err) {
-      toast.error(getErrorMessage(err, "Failed to save row"));
-    }
+    return Object.entries(cellsSnapshot).map(([dateKey, c]) => ({
+      date: dateKey,
+      status: c.status,
+      tasks: c.tasks.split("\n").map((t) => t.trim()).filter(Boolean),
+      worked_hours: c.worked_hours,
+      billable_hours: c.billable_hours,
+      actual_hours: c.actual_hours,
+      completed_task: c.completed_task,
+      completed_task_description: c.completed_task_description,
+      unplanned_task: c.unplanned_task,
+      comments: c.comments,
+    }));
   }
 
   async function handleSaveDraft() {
     const entries = buildEntriesFromCells(cells);
     if (entries.length === 0) {
-      toast.error("No entries to save. Fill in worked hours for at least one day.");
+      toast.error("No entries to save.");
       return;
     }
     setSaving(true);
@@ -311,9 +331,9 @@ export default function EmployeeTimesheetPage() {
         res = await timesheetService.update(timesheet._id, entries);
       }
       setTimesheet(res.data);
-      const saved2 = buildCellsFromEntries(res.data.entries);
-      cellsRef.current = saved2;
-      setCells(saved2);
+      const saved = buildCellsFromEntries(res.data.entries, days);
+      cellsRef.current = saved;
+      setCells(saved);
       toast.success("Timesheet saved as draft");
     } catch (err) {
       toast.error(getErrorMessage(err, "Failed to save draft"));
@@ -322,43 +342,52 @@ export default function EmployeeTimesheetPage() {
     }
   }
 
-  async function handleSubmit() {
-    if (!timesheet) {
-      // save first then submit
-      setSaving(true);
-      try {
-        const entries = buildEntriesFromCells(cells);
+  function handleSubmitClick() {
+    const warnings: string[] = [];
+    Object.entries(cells).forEach(([, c]) => {
+      if ((c.status === "Working" || c.status === "Extra Working") && !c.tasks.trim()) {
+        warnings.push("working");
+      }
+    });
+    const emptyWorkingDays = warnings.length;
+    if (emptyWorkingDays > 0) {
+      setSubmitWarnings([
+        `${emptyWorkingDays} working day${emptyWorkingDays > 1 ? "s have" : " has"} no task description filled in.`,
+      ]);
+      setSubmitConfirmOpen(true);
+    } else {
+      setSubmitConfirmOpen(true);
+      setSubmitWarnings([]);
+    }
+  }
+
+  async function handleSubmitConfirmed() {
+    setSubmitConfirmOpen(false);
+    setSaving(true);
+    try {
+      const entries = buildEntriesFromCells(cells);
+      const apiMonth = selectedMonth + 1;
+
+      if (!timesheet) {
         if (entries.length === 0) {
           toast.error("No entries to submit.");
           setSaving(false);
           return;
         }
-        const apiMonth = selectedMonth + 1;
         const saved = await timesheetService.create(apiMonth, selectedYear, entries);
         const submitted = await timesheetService.submit(saved.data._id);
         setTimesheet(submitted.data);
-        const s1 = buildCellsFromEntries(submitted.data.entries);
+        const s1 = buildCellsFromEntries(submitted.data.entries, days);
         cellsRef.current = s1;
         setCells(s1);
-        toast.success("Timesheet submitted!");
-      } catch (err) {
-        toast.error(getErrorMessage(err, "Failed to submit"));
-      } finally {
-        setSaving(false);
+      } else {
+        const updated = await timesheetService.update(timesheet._id, entries);
+        const submitted = await timesheetService.submit(updated.data._id);
+        setTimesheet(submitted.data);
+        const s2 = buildCellsFromEntries(submitted.data.entries, days);
+        cellsRef.current = s2;
+        setCells(s2);
       }
-      return;
-    }
-
-    setSaving(true);
-    try {
-      // persist latest edits first
-      const entries = buildEntriesFromCells(cells);
-      const updated = await timesheetService.update(timesheet._id, entries);
-      const submitted = await timesheetService.submit(updated.data._id);
-      setTimesheet(submitted.data);
-      const s2 = buildCellsFromEntries(submitted.data.entries);
-      cellsRef.current = s2;
-      setCells(s2);
       toast.success("Timesheet submitted! Your manager can now review it.");
     } catch (err) {
       toast.error(getErrorMessage(err, "Failed to submit timesheet"));
@@ -367,7 +396,7 @@ export default function EmployeeTimesheetPage() {
     }
   }
 
-  // ── Render ──────────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <DashboardLayout>
@@ -386,26 +415,50 @@ export default function EmployeeTimesheetPage() {
                 <h1 className="text-xl font-bold tracking-tight">{decodeURIComponent(projectName)}</h1>
               </div>
               <p className="text-muted-foreground text-sm mt-0.5">
-                Click any cell to edit. Fill worked hours to activate a row.
+                Fill in your daily task descriptions and billable hours.
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            {/* Year navigation */}
+            <div className="flex items-center gap-1 border rounded-lg px-1 h-10">
+              <button
+                onClick={() => setSelectedYear(y => y - 1)}
+                disabled={saving}
+                className="p-1.5 rounded hover:bg-slate-100 text-slate-500 disabled:opacity-40"
+                title="Previous year"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <span className="text-sm font-semibold text-slate-700 w-12 text-center select-none">
+                {selectedYear}
+              </span>
+              <button
+                onClick={() => setSelectedYear(y => y + 1)}
+                disabled={saving || selectedYear >= CURRENT_YEAR + 1}
+                className="p-1.5 rounded hover:bg-slate-100 text-slate-500 disabled:opacity-40"
+                title="Next year"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Month selector — not disabled when locked so viewing is always possible */}
             <Select
               value={String(selectedMonth)}
               onValueChange={(v) => setSelectedMonth(Number(v))}
-              disabled={isLocked || saving}
+              disabled={saving}
             >
-              <SelectTrigger className="w-48">
+              <SelectTrigger className="w-40">
                 <div className="flex items-center gap-2">
                   <Calendar className="w-4 h-4 text-muted-foreground shrink-0" />
-                  <span>{MONTHS[selectedMonth]} {selectedYear}</span>
+                  <span>{MONTHS[selectedMonth]}</span>
                 </div>
               </SelectTrigger>
               <SelectContent>
                 {MONTHS.map((m, idx) => (
                   <SelectItem key={idx} value={String(idx)}>
-                    {m} {selectedYear}
+                    {m}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -426,28 +479,18 @@ export default function EmployeeTimesheetPage() {
         </div>
 
         {/* ── KPI strip ── */}
-        <div className="grid grid-cols-4 gap-3 mb-4">
+        <div className="grid grid-cols-3 gap-3 mb-4">
           <div className="bg-card border rounded-lg px-4 py-3">
-            <p className="text-xs text-muted-foreground">Total Worked</p>
-            <p className="text-xl font-bold mt-0.5">{totalWorked}h</p>
-            <p className="text-xs text-muted-foreground">{activeEntries.length} active days</p>
-          </div>
-          <div className="bg-card border rounded-lg px-4 py-3">
-            <p className="text-xs text-muted-foreground">Billable Hours</p>
+            <p className="text-xs text-muted-foreground">Total Billable Hours</p>
             <p className="text-xl font-bold text-blue-600 mt-0.5">{totalBillable}h</p>
-            <p className="text-xs text-muted-foreground">
-              {totalWorked > 0 ? Math.round((totalBillable / totalWorked) * 100) : 0}% of total
-            </p>
           </div>
           <div className="bg-card border rounded-lg px-4 py-3">
-            <p className="text-xs text-muted-foreground">Tasks Completed</p>
-            <p className="text-xl font-bold text-green-600 mt-0.5">{completedCount}</p>
-            <p className="text-xs text-muted-foreground">of {activeEntries.length} days</p>
+            <p className="text-xs text-muted-foreground">Working Days</p>
+            <p className="text-xl font-bold text-green-600 mt-0.5">{workingEntries.length}</p>
           </div>
           <div className="bg-card border rounded-lg px-4 py-3">
-            <p className="text-xs text-muted-foreground">Unplanned Tasks</p>
-            <p className="text-xl font-bold text-orange-500 mt-0.5">{unplannedCount}</p>
-            <p className="text-xs text-muted-foreground">outside scope</p>
+            <p className="text-xs text-muted-foreground">Total Worked Hours</p>
+            <p className="text-xl font-bold mt-0.5">{totalWorked}h</p>
           </div>
         </div>
 
@@ -455,14 +498,28 @@ export default function EmployeeTimesheetPage() {
         {isLocked && (
           <div className="flex items-center gap-3 px-4 py-3 bg-green-50 border border-green-200 rounded-lg mb-4">
             <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0" />
-            <div>
+            <div className="flex-1">
               <p className="text-sm font-medium text-green-800">
                 Timesheet submitted for {MONTHS[selectedMonth]} {selectedYear}
               </p>
               <p className="text-xs text-green-600">
-                Your manager can now review your entries. No further edits are allowed.
+                Your manager can now review your entries. Use &quot;Edit&quot; to recall and make changes.
               </p>
             </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRecall}
+              disabled={saving}
+              className="gap-1.5 border-green-300 text-green-700 hover:bg-green-100 shrink-0"
+            >
+              {saving ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Pencil className="w-3.5 h-3.5" />
+              )}
+              Edit
+            </Button>
           </div>
         )}
 
@@ -470,67 +527,74 @@ export default function EmployeeTimesheetPage() {
         {loading ? (
           <div className="flex items-center justify-center py-24 text-muted-foreground gap-2">
             <Loader2 className="w-5 h-5 animate-spin" />
-            <span>Loading timesheet…</span>
+            <span>Loading timesheet...</span>
           </div>
         ) : (
           <div className="bg-white border rounded-lg overflow-hidden flex-1 flex flex-col min-h-0">
             <div className="overflow-auto flex-1">
               <table
                 className="w-full text-xs"
-                style={{ borderCollapse: "collapse", minWidth: 1020 }}
+                style={{ borderCollapse: "collapse", minWidth: 780 }}
               >
                 {/* Sticky header */}
                 <thead className="sticky top-0 z-20">
                   <tr className="bg-[#217346] text-white">
-                    <th style={th} className="w-8 text-center">#</th>
-                    <th style={th} className="w-24 text-left">Date</th>
-                    <th style={th} className="w-14 text-left">Day</th>
-                    <th style={{ ...th, minWidth: 260 }} className="text-left">Tasks</th>
-                    <th style={th} className="w-16 text-right">Worked</th>
-                    <th style={th} className="w-16 text-right">Billable</th>
-                    <th style={th} className="w-16 text-right">Actual</th>
-                    <th style={th} className="w-16 text-center">Done?</th>
-                    <th style={th} className="w-20 text-center">Unplanned?</th>
-                    <th style={{ ...th, minWidth: 160 }} className="text-left">Completion Note</th>
-                    <th style={{ ...th, minWidth: 160 }} className="text-left">Comments</th>
-                    {!isLocked && <th style={th} className="w-12 text-center">Save</th>}
+                    <th style={th} className="w-12 text-center">Sr No</th>
+                    <th style={th} className="w-28 text-center">Status</th>
+                    <th style={th} className="w-36 text-left">Date</th>
+                    <th style={th} className="w-24 text-left">Day</th>
+                    <th style={{ ...th, minWidth: 300 }} className="text-left">Task Description</th>
+                    <th style={th} className="w-24 text-center">Billable Hours</th>
                   </tr>
                 </thead>
                 <tbody>
                   {days.map((day, rowIdx) => {
                     const dateKey = toDateKey(day);
                     const cell = getCell(dateKey);
-                    const weekend = isWeekend(day);
                     const today = isToday(day);
-                    const active = cell.worked_hours > 0;
-                    const dayName = day.toLocaleDateString("en-IN", { weekday: "short" });
-                    const dateDisplay = day.toLocaleDateString("en-IN", {
-                      day: "2-digit",
-                      month: "short",
-                    });
+                    const dayName = DAY_NAMES[day.getDay()];
+                    const dateDisplay = `${day.getDate()} ${MONTHS[day.getMonth()]} ${day.getFullYear()}`;
 
-                    const rowClass = [
-                      today ? "bg-amber-50" : weekend ? "bg-blue-50" : rowIdx % 2 === 0 ? "bg-white" : "bg-gray-50/60",
-                      !active && !isLocked ? "opacity-70" : "",
-                    ]
-                      .filter(Boolean)
-                      .join(" ");
+                    const rowBg = statusRowBg(cell.status, today);
 
                     return (
                       <tr
                         key={dateKey}
-                        className={rowClass}
+                        className={rowBg}
                         style={today ? { borderLeft: "3px solid #f59e0b" } : { borderLeft: "3px solid transparent" }}
                       >
-                        {/* # */}
-                        <td style={td} className="text-center text-gray-400 font-mono select-none">
+                        {/* Sr No */}
+                        <td style={td} className="text-center text-gray-500 font-mono font-medium">
                           {rowIdx + 1}
+                        </td>
+
+                        {/* Status */}
+                        <td style={td} className="text-center">
+                          {isLocked ? (
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold border ${statusBadgeClass(cell.status)}`}>
+                              {cell.status}
+                            </span>
+                          ) : (
+                            <select
+                              value={cell.status}
+                              onChange={(e) => patchCell(dateKey, { status: e.target.value as DayStatus, saved: false })}
+                              className={`text-[10px] font-semibold rounded px-1.5 py-0.5 border outline-none cursor-pointer ${statusBadgeClass(cell.status)}`}
+                            >
+                              {STATUS_OPTIONS.map((s) => (
+                                <option key={s} value={s}>{s}</option>
+                              ))}
+                            </select>
+                          )}
                         </td>
 
                         {/* Date */}
                         <td
                           style={td}
-                          className={`font-medium whitespace-nowrap ${weekend ? "text-blue-600" : ""} ${today ? "text-amber-600 font-bold" : ""}`}
+                          className={`font-medium whitespace-nowrap ${
+                            cell.status === "Holiday" ? "text-red-600" :
+                            cell.status === "On leave" ? "text-orange-600" :
+                            today ? "text-amber-700 font-bold" : "text-gray-700"
+                          }`}
                         >
                           {dateDisplay}
                         </td>
@@ -538,206 +602,97 @@ export default function EmployeeTimesheetPage() {
                         {/* Day */}
                         <td
                           style={td}
-                          className={`font-medium ${weekend ? "text-blue-500" : "text-gray-500"}`}
+                          className={`font-medium ${
+                            cell.status === "Holiday" ? "text-red-500" :
+                            cell.status === "On leave" ? "text-orange-500" :
+                            "text-gray-500"
+                          }`}
                         >
                           {dayName}
                         </td>
 
-                        {/* Tasks */}
-                        <td style={{ ...td, padding: "3px 4px" }}>
+                        {/* Task Description */}
+                        <td style={{ ...td, padding: "3px 6px" }}>
                           {isLocked ? (
                             cell.tasks ? (
                               cell.tasks.includes("\n") ? (
-                                <ul className="space-y-0.5 list-none px-1">
+                                <ul className="space-y-0.5 list-none">
                                   {cell.tasks.split("\n").filter(Boolean).map((t, ti) => (
                                     <li key={ti} className="flex items-start gap-1">
-                                      <span className="text-gray-400 shrink-0 mt-0.5 select-none">▸</span>
+                                      <span className="text-gray-400 shrink-0 mt-0.5 select-none">&#9656;</span>
                                       <span>{t}</span>
                                     </li>
                                   ))}
                                 </ul>
                               ) : (
-                                <span className="px-1">{cell.tasks}</span>
+                                <span>{cell.tasks}</span>
                               )
                             ) : (
-                              <span className="text-gray-300 px-1">—</span>
+                              <span className="text-gray-300">—</span>
                             )
                           ) : (
                             <textarea
                               value={cell.tasks}
-                              placeholder="Enter tasks (one per line)…"
+                              placeholder={
+                                cell.status === "Holiday" ? "" :
+                                cell.status === "On leave" ? "" :
+                                "Enter task description..."
+                              }
                               rows={cell.tasks ? Math.max(1, cell.tasks.split("\n").length) : 1}
                               onChange={(e) => patchCell(dateKey, { tasks: e.target.value, saved: false })}
-                              className="w-full border-0 bg-transparent focus:bg-white focus:ring-1 focus:ring-blue-400 rounded-sm outline-none px-1 py-0.5 text-xs resize-none placeholder:text-gray-300"
+                              disabled={cell.status === "Holiday" || cell.status === "On leave"}
+                              className={`w-full border-0 bg-transparent focus:bg-white focus:ring-1 focus:ring-blue-400 rounded-sm outline-none px-1 py-0.5 text-xs resize-none placeholder:text-gray-300 ${
+                                cell.status === "Holiday" || cell.status === "On leave" ? "opacity-40 cursor-not-allowed" : ""
+                              }`}
                             />
                           )}
                         </td>
 
-                        {/* Worked */}
-                        <td style={td} className="text-right">
-                          <NumInput
-                            value={cell.worked_hours}
-                            onChange={(v) => patchCell(dateKey, { worked_hours: v, saved: false })}
-                            disabled={isLocked}
-                          />
-                        </td>
-
-                        {/* Billable */}
-                        <td style={td} className="text-right">
-                          <NumInput
-                            value={cell.billable_hours}
-                            onChange={(v) => patchCell(dateKey, { billable_hours: v, saved: false })}
-                            disabled={isLocked}
-                          />
-                        </td>
-
-                        {/* Actual */}
-                        <td style={td} className="text-right">
-                          <NumInput
-                            value={cell.actual_hours}
-                            onChange={(v) => patchCell(dateKey, { actual_hours: v, saved: false })}
-                            disabled={isLocked}
-                          />
-                        </td>
-
-                        {/* Done? */}
+                        {/* Billable Hours */}
                         <td style={td} className="text-center">
                           {isLocked ? (
-                            cell.completed_task ? (
-                              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-100 text-green-600 text-[10px] font-bold">
-                                ✓
-                              </span>
-                            ) : (
-                              <span className="text-gray-300">—</span>
-                            )
+                            <span className={`font-mono font-semibold ${
+                              cell.billable_hours > 0 ? "text-gray-800" : "text-gray-400"
+                            }`}>
+                              {cell.billable_hours}
+                            </span>
                           ) : (
                             <input
-                              type="checkbox"
-                              checked={cell.completed_task}
-                              onChange={(e) =>
+                              type="number"
+                              min={0}
+                              max={24}
+                              step={0.5}
+                              value={cell.billable_hours === 0 ? "0" : cell.billable_hours}
+                              onChange={(e) => {
+                                const v = parseFloat(e.target.value);
                                 patchCell(dateKey, {
-                                  completed_task: e.target.checked,
-                                  completed_task_description: e.target.checked
-                                    ? cell.completed_task_description
-                                    : "",
+                                  billable_hours: isNaN(v) ? 0 : v,
+                                  worked_hours: isNaN(v) ? 0 : v,
                                   saved: false,
-                                })
-                              }
-                              className="h-3.5 w-3.5 rounded accent-green-600 cursor-pointer"
+                                });
+                              }}
+                              disabled={cell.status === "Holiday" || cell.status === "On leave"}
+                              className={`w-16 text-center font-mono font-semibold bg-transparent border-0 focus:bg-white focus:ring-1 focus:ring-blue-400 rounded-sm outline-none px-1 py-0.5 text-xs ${
+                                cell.status === "Holiday" || cell.status === "On leave" ? "opacity-40 cursor-not-allowed" : ""
+                              }`}
                             />
                           )}
                         </td>
-
-                        {/* Unplanned? */}
-                        <td style={td} className="text-center">
-                          {isLocked ? (
-                            cell.unplanned_task ? (
-                              <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-orange-100 text-orange-600 font-semibold text-[10px] uppercase tracking-wide">
-                                Yes
-                              </span>
-                            ) : (
-                              <span className="text-gray-300">—</span>
-                            )
-                          ) : (
-                            <input
-                              type="checkbox"
-                              checked={cell.unplanned_task}
-                              onChange={(e) =>
-                                patchCell(dateKey, { unplanned_task: e.target.checked, saved: false })
-                              }
-                              className="h-3.5 w-3.5 rounded accent-orange-500 cursor-pointer"
-                            />
-                          )}
-                        </td>
-
-                        {/* Completion Note */}
-                        <td style={{ ...td, padding: "3px 4px" }}>
-                          {isLocked ? (
-                            <span className={cell.completed_task_description ? "text-green-700" : "text-gray-300"}>
-                              {cell.completed_task_description || "—"}
-                            </span>
-                          ) : (
-                            <textarea
-                              value={cell.completed_task_description}
-                              placeholder={cell.completed_task ? "Describe completion…" : ""}
-                              rows={cell.completed_task_description ? 2 : 1}
-                              onChange={(e) =>
-                                patchCell(dateKey, { completed_task_description: e.target.value, saved: false })
-                              }
-                              className="w-full border-0 bg-transparent focus:bg-white focus:ring-1 focus:ring-blue-400 rounded-sm outline-none px-1 py-0.5 text-xs resize-none placeholder:text-gray-300"
-                            />
-                          )}
-                        </td>
-
-                        {/* Comments */}
-                        <td style={{ ...td, padding: "3px 4px" }}>
-                          {isLocked ? (
-                            <span className={cell.comments ? "text-gray-600" : "text-gray-300"}>
-                              {cell.comments || "—"}
-                            </span>
-                          ) : (
-                            <textarea
-                              value={cell.comments}
-                              placeholder="Notes…"
-                              rows={cell.comments ? 2 : 1}
-                              onChange={(e) =>
-                                patchCell(dateKey, { comments: e.target.value, saved: false })
-                              }
-                              className="w-full border-0 bg-transparent focus:bg-white focus:ring-1 focus:ring-blue-400 rounded-sm outline-none px-1 py-0.5 text-xs resize-none placeholder:text-gray-300"
-                            />
-                          )}
-                        </td>
-
-                        {/* Per-row Save */}
-                        {!isLocked && (
-                          <td style={{ ...td, padding: "2px 4px" }} className="text-center">
-                            {cell.saved ? (
-                              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-green-50 text-green-500" title="Saved">
-                                <Check className="w-3.5 h-3.5" />
-                              </span>
-                            ) : (
-                              <button
-                                onClick={() => handleSaveRow(dateKey)}
-                                title="Save this row"
-                                className="inline-flex items-center justify-center w-6 h-6 rounded bg-[#217346] hover:bg-[#185c37] text-white transition-colors"
-                              >
-                                <Save className="w-3 h-3" />
-                              </button>
-                            )}
-                          </td>
-                        )}
                       </tr>
                     );
                   })}
 
                   {/* Totals row */}
                   <tr
-                    className="bg-[#e8f0fe] font-bold text-xs sticky bottom-0"
-                    style={{ borderTop: "2px solid #217346" }}
+                    className="bg-[#217346] text-white font-bold text-xs sticky bottom-0"
+                    style={{ borderTop: "2px solid #185c37" }}
                   >
-                    <td
-                      style={{ ...td, borderColor: "#b0c4de" }}
-                      colSpan={4}
-                      className="text-gray-500 text-[10px] uppercase tracking-wider px-3"
-                    >
-                      TOTAL — {activeEntries.length} days logged
+                    <td style={thTotal} colSpan={5} className="text-right pr-4 uppercase tracking-wider text-[11px]">
+                      Total Worked Hours
                     </td>
-                    <td style={{ ...td, borderColor: "#b0c4de" }} className="text-right font-mono text-slate-800">
-                      {totalWorked}
-                    </td>
-                    <td style={{ ...td, borderColor: "#b0c4de" }} className="text-right font-mono text-blue-700">
+                    <td style={thTotal} className="text-center font-mono text-sm">
                       {totalBillable}
                     </td>
-                    <td style={{ ...td, borderColor: "#b0c4de" }} className="text-right font-mono text-violet-700">
-                      {totalActual}
-                    </td>
-                    <td style={{ ...td, borderColor: "#b0c4de" }} className="text-center text-green-700">
-                      {completedCount}/{activeEntries.length}
-                    </td>
-                    <td style={{ ...td, borderColor: "#b0c4de" }} className="text-center text-orange-600">
-                      {unplannedCount}
-                    </td>
-                    <td style={{ ...td, borderColor: "#b0c4de" }} colSpan={isLocked ? 2 : 3} />
                   </tr>
                 </tbody>
               </table>
@@ -753,9 +708,20 @@ export default function EmployeeTimesheetPage() {
           style={{ marginLeft: "var(--sidebar-width, 0px)" }}
         >
           <p className="text-xs text-muted-foreground mr-auto">
-            <span className="font-semibold text-foreground">{activeEntries.length}</span> active{" "}
-            {activeEntries.length === 1 ? "day" : "days"} · {totalWorked}h worked
+            <span className="font-semibold text-foreground">{workingEntries.length}</span> working{" "}
+            {workingEntries.length === 1 ? "day" : "days"} &middot; {totalBillable}h billable
           </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleUndo}
+            disabled={!canUndo || saving}
+            className="gap-1.5 text-muted-foreground"
+            title="Undo last change"
+          >
+            <Undo2 className="w-4 h-4" />
+            Undo
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -772,7 +738,7 @@ export default function EmployeeTimesheetPage() {
           </Button>
           <Button
             size="sm"
-            onClick={handleSubmit}
+            onClick={handleSubmitClick}
             disabled={saving}
             className="gap-1.5 bg-[#217346] hover:bg-[#185c37] text-white"
           >
@@ -785,6 +751,48 @@ export default function EmployeeTimesheetPage() {
           </Button>
         </div>
       )}
+
+      {/* Submit confirmation dialog */}
+      <AlertDialog open={submitConfirmOpen} onOpenChange={setSubmitConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              {submitWarnings.length > 0 && (
+                <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />
+              )}
+              Submit Timesheet
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              <div className="space-y-3">
+                {submitWarnings.length > 0 ? (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 text-sm text-amber-800 space-y-1">
+                    {submitWarnings.map((w, i) => (
+                      <p key={i} className="flex items-start gap-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-500" />
+                        {w}
+                      </p>
+                    ))}
+                    <p className="text-xs text-amber-600 mt-1">You can still submit, but consider filling in task descriptions first.</p>
+                  </div>
+                ) : null}
+                <p>
+                  Submit your timesheet for <strong>{MONTHS[selectedMonth]} {selectedYear}</strong>?
+                  Once submitted, your manager will be notified for review.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleSubmitConfirmed}
+              className="bg-[#217346] hover:bg-[#185c37] text-white"
+            >
+              Submit Timesheet
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </DashboardLayout>
   );
 }
@@ -793,13 +801,19 @@ export default function EmployeeTimesheetPage() {
 
 const th: React.CSSProperties = {
   border: "1px solid #1a5c38",
-  padding: "6px 8px",
+  padding: "8px 10px",
   fontWeight: 600,
   whiteSpace: "nowrap",
 };
 
 const td: React.CSSProperties = {
   border: "1px solid #d1d5db",
-  padding: "2px 6px",
-  verticalAlign: "top",
+  padding: "4px 8px",
+  verticalAlign: "middle",
+};
+
+const thTotal: React.CSSProperties = {
+  border: "1px solid #1a5c38",
+  padding: "8px 10px",
+  fontWeight: 700,
 };

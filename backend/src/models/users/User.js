@@ -58,6 +58,9 @@ const userSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         default: null
     },
+    team_ids: [{
+        type: String
+    }],
     permissions: {
         module_access: [permissionSchema],
         can_approve_expenses: { type: Boolean, default: false },

@@ -177,6 +177,40 @@ router.put('/:id/submit', ...auth, authorize(['EMPLOYEE']), async (req, res) => 
     }
 });
 
+// ─── PUT /api/timesheet/:id/recall — recall a submitted timesheet back to draft
+router.put('/:id/recall', ...auth, authorize(['EMPLOYEE']), async (req, res) => {
+    try {
+        const tenantId = req.tenantIdString;
+        const { id } = req.params;
+
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ error: 'Invalid timesheet ID' });
+        }
+
+        const timesheet = await Timesheet.findOne({
+            _id: id,
+            tenant_id: tenantId,
+            user_id: req.user._id
+        });
+
+        if (!timesheet) {
+            return res.status(404).json({ error: 'Timesheet not found' });
+        }
+
+        if (timesheet.status !== 'submitted') {
+            return res.status(400).json({ error: 'Timesheet is not submitted' });
+        }
+
+        timesheet.status = 'draft';
+        timesheet.submitted_at = null;
+        await timesheet.save();
+
+        res.json({ success: true, data: timesheet, message: 'Timesheet recalled to draft' });
+    } catch (err) {
+        res.status(500).json({ error: 'Server error', message: err.message });
+    }
+});
+
 // ─── GET /api/timesheet/team?month=3&year=2026 — manager sees mapped employees
 router.get('/team', ...auth, authorize(['MANAGER', 'ADMINISTRATOR']), async (req, res) => {
     try {
@@ -263,6 +297,90 @@ router.get('/team', ...auth, authorize(['MANAGER', 'ADMINISTRATOR']), async (req
         }).filter(Boolean);
 
         res.json({ success: true, data: team });
+    } catch (err) {
+        res.status(500).json({ error: 'Server error', message: err.message });
+    }
+});
+
+// ─── GET /api/timesheet/project/:projectId?month=3&year=2026 — manager views all employees in a project
+router.get('/project/:projectId', ...auth, authorize(['MANAGER', 'ADMINISTRATOR']), async (req, res) => {
+    try {
+        const tenantId = req.tenantIdString;
+        const { projectId } = req.params;
+        const month = parseInt(req.query.month);
+        const year = parseInt(req.query.year);
+
+        if (!month || !year || month < 1 || month > 12) {
+            return res.status(400).json({ error: 'Valid month and year are required' });
+        }
+
+        // Find all mappings for this project (manager only sees their own mappings)
+        const filter = {
+            tenant_id: tenantId,
+            project_id: projectId,
+            is_deleted: { $ne: true }
+        };
+        if (req.user.role === 'MANAGER') {
+            filter.manager_id = req.user._id;
+        }
+
+        const mappings = await EmployeeManagerMapping.findOne({ tenant_id: tenantId, project_id: projectId, is_deleted: { $ne: true } }).lean();
+        const projectInfo = mappings ? {
+            project_id: projectId,
+            project_name: mappings.project_name || '',
+            project_code: mappings.project_code || '',
+            client_id: mappings.client_id || null,
+            client_name: mappings.client_name || ''
+        } : { project_id: projectId, project_name: '', project_code: '', client_id: null, client_name: '' };
+
+        const allMappings = await EmployeeManagerMapping.find(filter)
+            .populate('employee_id', 'employee_name official_email unique_id designation')
+            .lean();
+
+        const employeeEmails = allMappings.map(m => m.employee_id?.official_email).filter(Boolean);
+
+        const employeeUsers = await User.find({
+            tenant_id: tenantId,
+            email: { $in: employeeEmails },
+            role: 'EMPLOYEE',
+            is_deleted: { $ne: true }
+        }).lean();
+
+        const emailToUserId = {};
+        employeeUsers.forEach(u => { emailToUserId[u.email] = u._id; });
+
+        const userIds = Object.values(emailToUserId);
+        const timesheets = await Timesheet.find({
+            tenant_id: tenantId,
+            user_id: { $in: userIds },
+            month,
+            year
+        }).lean();
+
+        const userIdToTimesheet = {};
+        timesheets.forEach(ts => { userIdToTimesheet[ts.user_id.toString()] = ts; });
+
+        const team = allMappings.map(mapping => {
+            const emp = mapping.employee_id;
+            if (!emp) return null;
+            const userId = emailToUserId[emp.official_email];
+            const timesheet = userId ? userIdToTimesheet[userId.toString()] : null;
+            return {
+                employee_id: emp._id,
+                employee_name: emp.employee_name,
+                official_email: emp.official_email,
+                unique_id: emp.unique_id,
+                designation: emp.designation,
+                timesheet_id: timesheet?._id || null,
+                status: timesheet?.status || 'not_started',
+                submitted_at: timesheet?.submitted_at || null,
+                entries_count: timesheet?.entries?.length || 0,
+                total_worked: timesheet?.entries?.reduce((s, e) => s + (e.worked_hours || 0), 0) || 0,
+                total_billable: timesheet?.entries?.reduce((s, e) => s + (e.billable_hours || 0), 0) || 0
+            };
+        }).filter(Boolean);
+
+        res.json({ success: true, project: projectInfo, data: team });
     } catch (err) {
         res.status(500).json({ error: 'Server error', message: err.message });
     }

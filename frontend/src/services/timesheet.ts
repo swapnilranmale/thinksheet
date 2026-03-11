@@ -2,9 +2,12 @@ import { api } from '@/lib/api';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+export type DayStatus = 'Working' | 'On leave' | 'Holiday' | 'Extra Working';
+
 export interface TimesheetEntry {
   _id?: string;
   date: string;
+  status: DayStatus;
   tasks: string[];
   worked_hours: number;
   billable_hours: number;
@@ -60,6 +63,29 @@ export interface ProjectMaster {
   project_code?: string;
   unique_id?: string;
   project_status?: string;
+  project_start_date?: string;
+  project_end_date?: string;
+}
+
+export interface StreamlineDepartment {
+  _id: string;
+  department_code: string;
+  department_name: string;
+  department_status: string;
+}
+
+export interface StreamlineTeam {
+  _id: string;
+  unique_id: string;
+  team_name: string;
+  department_id: {
+    _id: string;
+    department_code: string;
+    department_name: string;
+    department_status: string;
+  };
+  manager_ids: { _id: string; name: string; email: string }[];
+  team_status: string;
 }
 
 export interface MappingRecord {
@@ -85,6 +111,7 @@ export interface ManagerUser {
   full_name: string;
   email: string;
   designation?: string;
+  team_ids?: string[];
 }
 
 export interface EmployeeMaster {
@@ -94,6 +121,8 @@ export interface EmployeeMaster {
   unique_id: string;
   designation?: string;
   department_id?: string;
+  team_id?: string;
+  team_name?: string;
 }
 
 // ── Employee Timesheet API ────────────────────────────────────────────────────
@@ -122,6 +151,12 @@ export const timesheetService = {
   /** Submit timesheet */
   submit: async (id: string) => {
     const res = await api.put<{ success: boolean; data: Timesheet; message: string }>(`/timesheet/${id}/submit`, {});
+    return res.data; // { data, message }
+  },
+
+  /** Recall a submitted timesheet back to draft */
+  recall: async (id: string) => {
+    const res = await api.put<{ success: boolean; data: Timesheet; message: string }>(`/timesheet/${id}/recall`, {});
     return res.data; // { data, message }
   },
 };
@@ -203,6 +238,209 @@ export const employeeMappingService = {
   /** Reassign employee to different manager */
   update: async (id: string, manager_id: string) => {
     const res = await api.put<{ success: boolean; message: string }>(`/employee-mapping/${id}`, { manager_id });
+    return res.data;
+  },
+
+  /** Projects with date ranges from resources */
+  getProjectsWithDates: async () => {
+    const res = await api.get<{ projects: ProjectMaster[]; pagination: any }>(
+      '/streamline/projects-with-dates'
+    );
+    return { data: res.data.projects ?? [] };
+  },
+};
+
+// ── Streamline Resource Master Types ────────────────────────────────────────
+
+export interface ResourceMasterEmployee {
+  name: string;
+  email: string;
+  emp_id: string;
+  /** Streamline Resource ID, e.g. "UPID-26-18-1" */
+  resource_id: string;
+  designation: string;
+  team_name: string;
+  start_from: string | null;
+  end_date: string | null;
+  is_active: boolean;
+}
+
+export interface ResourceMasterProject {
+  project_id: string;
+  project_name: string;
+  project_code: string;
+  client_id: string;
+  client_name: string;
+  start_date: string | null;
+  end_date: string | null;
+  resource_count: number;
+  resources: ResourceMasterEmployee[];
+}
+
+// ── Streamline Sync Types ────────────────────────────────────────────────────
+
+export interface SyncResult {
+  total_resources: number;
+  employees_synced: number;
+  mappings_synced: number;
+  errors: { resource_id: string; reason: string }[];
+}
+
+// ── Streamline Master Data API ──────────────────────────────────────────────
+
+export const streamlineService = {
+  getDepartments: async () => {
+    const res = await api.get<{ departments: StreamlineDepartment[]; pagination: any }>(
+      '/streamline/departments?page=1&limit=500'
+    );
+    return res.data.departments ?? [];
+  },
+
+  getTeams: async () => {
+    const res = await api.get<{ teams: StreamlineTeam[]; pagination: any }>(
+      '/streamline/teams?page=1&limit=500'
+    );
+    return res.data.teams ?? [];
+  },
+
+  /** Get only engineering teams (department_name contains "Engin") */
+  getEngineeringTeams: async () => {
+    const res = await api.get<{ teams: StreamlineTeam[]; pagination: any }>(
+      '/streamline/teams?page=1&limit=500'
+    );
+    const teams = res.data.teams ?? [];
+    return teams.filter(t =>
+      t.department_id?.department_name?.toLowerCase().includes('engin')
+    );
+  },
+
+  /**
+   * Full sync from Streamline360 Resource Master into ThinkSheet.
+   * Fetches the complete Client → Project → Resource Intimation → Resource hierarchy
+   * and upserts employees + employee-project mappings.
+   */
+  syncResources: async () => {
+    const res = await api.post<{ success: boolean; data: SyncResult }>('/streamline/sync', {});
+    return res.data;
+  },
+
+  /**
+   * Projects from Streamline360 Resource Master, grouped with their assigned employees.
+   * Managers see only projects in their teams; Admins see all.
+   */
+  getMyResourceProjects: async () => {
+    const res = await api.get<{ success: boolean; data: ResourceMasterProject[]; total: number }>(
+      '/streamline/my-resource-projects'
+    );
+    return res.data;
+  },
+};
+
+// ── Employee Management API ─────────────────────────────────────────────────
+
+export const employeeService = {
+  /** List employees (team-filtered for managers) */
+  getAll: async (teamId?: string) => {
+    const qs = teamId ? `?team_id=${teamId}` : '';
+    const res = await api.get<{ success: boolean; data: EmployeeMaster[] }>(`/employees${qs}`);
+    return res.data;
+  },
+
+  /** Create single employee */
+  create: async (data: { emp_id: string; emp_email: string; emp_name: string; team_id: string; team_name?: string; designation?: string }) => {
+    const res = await api.post<{ success: boolean; data: EmployeeMaster; user_created: boolean }>('/employees', data);
+    return res.data;
+  },
+
+  /** Update employee */
+  update: async (id: string, data: { emp_name?: string; designation?: string; team_id?: string; team_name?: string }) => {
+    const res = await api.put<{ success: boolean; data: EmployeeMaster }>(`/employees/${id}`, data);
+    return res.data;
+  },
+
+  /** Delete employee (soft) */
+  remove: async (id: string) => {
+    const res = await api.delete<{ success: boolean; message: string }>(`/employees/${id}`);
+    return res.data;
+  },
+
+  /** Bulk upload employees */
+  bulkUpload: async (file: File, teamId: string, teamName: string) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('team_id', teamId);
+    formData.append('team_name', teamName);
+    const res = await api.post<{
+      success: boolean;
+      data: { created: any[]; skipped: any[]; errors: any[] };
+      summary: { total: number; created: number; skipped: number; errors: number };
+    }>('/employees/bulk-upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return res.data;
+  },
+
+  /** Download CSV template */
+  downloadTemplate: () => {
+    window.open('/api/employees/download-template', '_blank');
+  },
+};
+
+// ── Project Team Types & API ─────────────────────────────────────────────────
+
+export interface ProjectTeamMember {
+  employee_id: string;
+  employee_name: string;
+  official_email: string;
+  unique_id: string;
+  designation: string;
+  timesheet_id: string | null;
+  status: 'submitted' | 'draft' | 'not_started';
+  submitted_at: string | null;
+  entries_count: number;
+  total_worked: number;
+  total_billable: number;
+}
+
+export interface ProjectInfo {
+  project_id: string;
+  project_name: string;
+  project_code: string;
+  client_id: string | null;
+  client_name: string;
+}
+
+export const projectTimesheetService = {
+  getProjectTeam: async (projectId: string, month: number, year: number) => {
+    const res = await api.get<{ success: boolean; project: ProjectInfo; data: ProjectTeamMember[] }>(
+      `/timesheet/project/${projectId}?month=${month}&year=${year}`
+    );
+    return res.data;
+  },
+};
+
+// ── Activity Log Types & API ─────────────────────────────────────────────────
+
+export interface ActivityLog {
+  _id: string;
+  action: string;
+  performed_by_name: string;
+  performed_by_role: string;
+  target_type: string;
+  target_name: string;
+  target_email: string;
+  details: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+}
+
+export const activityLogService = {
+  getAll: async (page = 1, limit = 50) => {
+    const res = await api.get<{
+      success: boolean;
+      data: ActivityLog[];
+      pagination: { page: number; limit: number; total: number; pages: number };
+    }>(`/logs?page=${page}&limit=${limit}`);
     return res.data;
   },
 };

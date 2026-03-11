@@ -8,13 +8,16 @@ import EmployeeDashboardPage from "./pages/EmployeeDashboardPage";
 import EmployeeTimesheetPage from "./pages/EmployeeTimesheetPage";
 import ManagerTimesheetReviewPage from "./pages/ManagerTimesheetReviewPage";
 import EmployeeManagerMappingPage from "./pages/EmployeeManagerMappingPage";
+import EmployeeManagementPage from "./pages/EmployeeManagementPage";
+import ProjectDashboardPage from "./pages/ProjectDashboardPage";
+import AdminProjectsDashboardPage from "./pages/AdminProjectsDashboardPage";
 
 function RoleRedirect() {
   const { user, isLoading } = useAuth();
   if (isLoading) return null;
   if (!user) return <Navigate to="/login" replace />;
   if (user.role === "ADMINISTRATOR") return <Navigate to="/timesheet/mapping" replace />;
-  if (user.role === "MANAGER") return <Navigate to="/timesheet/manager" replace />;
+  if (user.role === "MANAGER") return <Navigate to="/projects" replace />;
   return <Navigate to="/dashboard" replace />;
 }
 
@@ -46,10 +49,26 @@ export default function App() {
 
       {/* Manager */}
       <Route
-        path="/timesheet/manager"
+        path="/projects"
         element={
           <ProtectedRoute roles={["MANAGER"]}>
-            <ManagerTimesheetReviewPage />
+            <EmployeeManagementPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/projects/:projectId"
+        element={
+          <ProtectedRoute roles={["MANAGER"]}>
+            <ProjectDashboardPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/employees/manage"
+        element={
+          <ProtectedRoute roles={["MANAGER"]}>
+            <EmployeeManagementPage />
           </ProtectedRoute>
         }
       />
@@ -60,6 +79,14 @@ export default function App() {
         element={
           <ProtectedRoute roles={["ADMINISTRATOR"]}>
             <EmployeeManagerMappingPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/projects"
+        element={
+          <ProtectedRoute roles={["ADMINISTRATOR"]}>
+            <AdminProjectsDashboardPage />
           </ProtectedRoute>
         }
       />
