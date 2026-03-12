@@ -54,6 +54,10 @@ export function DialogTitle({ className, ...props }: HTMLAttributes<HTMLHeadingE
   return <h2 className={clsx("text-lg font-semibold text-slate-900", className)} {...props} />;
 }
 
+export function DialogDescription({ className, ...props }: HTMLAttributes<HTMLParagraphElement>) {
+  return <p className={clsx("text-sm text-slate-500", className)} {...props} />;
+}
+
 export function DialogFooter({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
   return <div className={clsx("flex justify-end gap-3 mt-6 pt-4 border-t", className)} {...props} />;
 }

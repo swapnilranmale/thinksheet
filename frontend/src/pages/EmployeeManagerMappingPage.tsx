@@ -16,6 +16,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
@@ -52,7 +53,10 @@ import {
   CalendarRange,
   Search,
   Eye,
+  EyeOff,
   IdCard,
+  User,
+  Lock,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -114,6 +118,7 @@ function CreateManagerDialog({
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [designation, setDesignation] = useState("");
   const [selectedTeamIds, setSelectedTeamIds] = useState<string[]>([]);
   const [teams, setTeams] = useState<StreamlineTeam[]>([]);
@@ -124,7 +129,7 @@ function CreateManagerDialog({
   useEffect(() => {
     if (open) {
       setTeamsLoading(true);
-      streamlineService.getTeams()
+      streamlineService.getEngineeringTeams()
         .then(setTeams)
         .catch(() => toast.error("Failed to load teams"))
         .finally(() => setTeamsLoading(false));
@@ -132,8 +137,8 @@ function CreateManagerDialog({
   }, [open]);
 
   function reset() {
-    setFullName(""); setEmail(""); setPassword(""); setDesignation("");
-    setSelectedTeamIds([]); setErrors({});
+    setFullName(""); setEmail(""); setPassword(""); setShowPassword(false);
+    setDesignation(""); setSelectedTeamIds([]); setErrors({});
   }
 
   function clearError(field: string) {
@@ -183,117 +188,158 @@ function CreateManagerDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) { reset(); onClose(); } }}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-[#217346]/10 flex items-center justify-center">
-              <UserPlus className="w-4 h-4 text-[#217346]" />
+      <DialogContent className="max-w-lg">
+        <DialogHeader className="pb-2">
+          <div className="flex items-center gap-3 mb-1">
+            <div className="w-10 h-10 rounded-xl bg-[#217346]/10 flex items-center justify-center shrink-0">
+              <UserPlus className="w-5 h-5 text-[#217346]" />
             </div>
-            Create Manager Account
-          </DialogTitle>
+            <div>
+              <DialogTitle className="text-lg font-semibold text-slate-800">Create Manager</DialogTitle>
+              <DialogDescription className="text-sm text-slate-500 mt-0.5">
+                Set up a new manager account and assign teams.
+              </DialogDescription>
+            </div>
+          </div>
         </DialogHeader>
-        <div className="space-y-4 py-2">
-          {/* Full Name */}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">
-              Full Name <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              value={fullName}
-              onChange={(e) => { setFullName(e.target.value); clearError("fullName"); }}
-              placeholder="e.g. Rahul Sharma"
-              className={`w-full h-10 rounded-lg border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346] ${errors.fullName ? "border-red-400 bg-red-50" : "border-slate-300"}`}
-            />
-            <FieldError msg={errors.fullName} />
+
+        <div className="space-y-4 py-1">
+          {/* Full Name + Email row */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">
+                Full Name <span className="text-red-500">*</span>
+              </label>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                <input
+                  type="text"
+                  value={fullName}
+                  onChange={(e) => { setFullName(e.target.value); clearError("fullName"); }}
+                  placeholder="Rahul Sharma"
+                  className={`w-full h-10 rounded-lg border pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]/40 focus:border-[#217346] transition-colors ${errors.fullName ? "border-red-400 bg-red-50" : "border-slate-200 bg-slate-50 hover:border-slate-300"}`}
+                />
+              </div>
+              <FieldError msg={errors.fullName} />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">
+                Designation
+              </label>
+              <div className="relative">
+                <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                <input
+                  type="text"
+                  value={designation}
+                  onChange={(e) => setDesignation(e.target.value)}
+                  placeholder="Eng. Manager"
+                  className="w-full h-10 rounded-lg border border-slate-200 bg-slate-50 hover:border-slate-300 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]/40 focus:border-[#217346] transition-colors"
+                />
+              </div>
+            </div>
           </div>
 
           {/* Email */}
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+            <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">
               Email <span className="text-red-500">*</span>
             </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => { setEmail(e.target.value); clearError("email"); }}
-              placeholder="manager@company.com"
-              className={`w-full h-10 rounded-lg border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346] ${errors.email ? "border-red-400 bg-red-50" : "border-slate-300"}`}
-            />
+            <div className="relative">
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => { setEmail(e.target.value); clearError("email"); }}
+                placeholder="manager@company.com"
+                className={`w-full h-10 rounded-lg border pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]/40 focus:border-[#217346] transition-colors ${errors.email ? "border-red-400 bg-red-50" : "border-slate-200 bg-slate-50 hover:border-slate-300"}`}
+              />
+            </div>
             <FieldError msg={errors.email} />
           </div>
 
           {/* Password */}
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+            <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">
               Password <span className="text-red-500">*</span>
             </label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => { setPassword(e.target.value); clearError("password"); }}
-              placeholder="Min. 6 characters"
-              className={`w-full h-10 rounded-lg border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346] ${errors.password ? "border-red-400 bg-red-50" : "border-slate-300"}`}
-            />
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              <input
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => { setPassword(e.target.value); clearError("password"); }}
+                placeholder="Min. 6 characters"
+                className={`w-full h-10 rounded-lg border pl-9 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]/40 focus:border-[#217346] transition-colors ${errors.password ? "border-red-400 bg-red-50" : "border-slate-200 bg-slate-50 hover:border-slate-300"}`}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(v => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                tabIndex={-1}
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
             <FieldError msg={errors.password} />
-          </div>
-
-          {/* Designation */}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">Designation</label>
-            <input
-              type="text"
-              value={designation}
-              onChange={(e) => setDesignation(e.target.value)}
-              placeholder="e.g. Engineering Manager"
-              className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]"
-            />
           </div>
 
           {/* Teams */}
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">
-              Assign Teams <span className="text-red-500">*</span>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide">
+                Assign Teams <span className="text-red-500">*</span>
+              </label>
               {selectedTeamIds.length > 0 && (
-                <span className="ml-2 text-xs text-slate-400 font-normal">({selectedTeamIds.length} selected)</span>
+                <span className="text-xs font-medium text-[#217346] bg-[#217346]/10 px-2 py-0.5 rounded-full">
+                  {selectedTeamIds.length} selected
+                </span>
               )}
-            </label>
+            </div>
             {teamsLoading ? (
-              <div className="flex items-center gap-2 text-sm text-slate-400 py-3">
-                <Loader2 className="w-4 h-4 animate-spin" /> Loading teams...
+              <div className="flex items-center gap-2 text-sm text-slate-400 py-4 justify-center border border-slate-200 rounded-lg bg-slate-50">
+                <Loader2 className="w-4 h-4 animate-spin text-[#217346]" /> Loading teams...
               </div>
             ) : (
-              <div className={`border rounded-lg divide-y max-h-40 overflow-y-auto ${errors.teams ? "border-red-400" : "border-slate-200"}`}>
+              <div className={`border rounded-lg divide-y max-h-44 overflow-y-auto ${errors.teams ? "border-red-400" : "border-slate-200"}`}>
                 {teams.length === 0 ? (
-                  <div className="p-3 text-center text-sm text-slate-400">No engineering teams found</div>
+                  <div className="p-4 text-center text-sm text-slate-400">No engineering teams found</div>
                 ) : (
-                  teams.map(team => (
-                    <label key={team._id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={selectedTeamIds.includes(team._id)}
-                        onChange={() => toggleTeam(team._id)}
-                        className="h-4 w-4 rounded border-gray-300 accent-[#217346]"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium">{team.team_name}</p>
-                        <p className="text-xs text-slate-400">{team.unique_id} · {team.department_id?.department_name}</p>
-                      </div>
-                    </label>
-                  ))
+                  teams.map(team => {
+                    const isChecked = selectedTeamIds.includes(team._id);
+                    return (
+                      <label
+                        key={team._id}
+                        className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors ${isChecked ? "bg-[#217346]/5 hover:bg-[#217346]/10" : "hover:bg-slate-50"}`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => toggleTeam(team._id)}
+                          className="h-4 w-4 rounded border-gray-300 accent-[#217346]"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm font-medium ${isChecked ? "text-[#217346]" : "text-slate-700"}`}>{team.team_name}</p>
+                          <p className="text-xs text-slate-400">{team.unique_id} · {team.department_id?.department_name}</p>
+                        </div>
+                        {isChecked && <CheckCircle2 className="w-4 h-4 text-[#217346] shrink-0" />}
+                      </label>
+                    );
+                  })
                 )}
               </div>
             )}
             <FieldError msg={errors.teams} />
           </div>
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => { reset(); onClose(); }} disabled={saving}>
+
+        <DialogFooter className="pt-2 gap-2">
+          <Button variant="outline" onClick={() => { reset(); onClose(); }} disabled={saving} className="flex-1 sm:flex-none">
             Cancel
           </Button>
-          <Button onClick={handleCreate} disabled={saving} className="bg-[#217346] hover:bg-[#185c37] text-white gap-2">
-            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-            Create Manager
+          <Button onClick={handleCreate} disabled={saving} className="flex-1 sm:flex-none bg-[#217346] hover:bg-[#185c37] text-white gap-2 shadow-sm">
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+            {saving ? "Creating..." : "Create Manager"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -326,7 +372,7 @@ function ManagersTab() {
       setLoading(true);
       const [res, teamsData] = await Promise.all([
         authService.getManagers(),
-        streamlineService.getTeams(),
+        streamlineService.getEngineeringTeams(),
       ]);
       setManagers(res.data.data);
       setTeams(teamsData);
@@ -408,12 +454,20 @@ function ManagersTab() {
     <div>
       {/* Toolbar */}
       <div className="flex items-center justify-between mb-5 gap-3 flex-wrap">
-        <p className="text-sm text-slate-500">
-          {managers.length} manager{managers.length !== 1 ? "s" : ""} &middot; {totalTeams} team{totalTeams !== 1 ? "s" : ""} assigned
-        </p>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1.5 text-sm text-slate-500">
+            <Users className="w-4 h-4 text-[#217346]" />
+            <span><strong className="text-slate-700">{managers.length}</strong> manager{managers.length !== 1 ? "s" : ""}</span>
+          </div>
+          <div className="w-px h-4 bg-slate-200" />
+          <div className="flex items-center gap-1.5 text-sm text-slate-500">
+            <Building2 className="w-4 h-4 text-[#217346]" />
+            <span><strong className="text-slate-700">{totalTeams}</strong> team{totalTeams !== 1 ? "s" : ""} assigned</span>
+          </div>
+        </div>
         <Button
           onClick={() => setCreateOpen(true)}
-          className="bg-[#217346] hover:bg-[#185c37] text-white gap-2 shrink-0"
+          className="bg-[#217346] hover:bg-[#185c37] text-white gap-2 shrink-0 shadow-sm"
         >
           <Plus className="w-4 h-4" />
           Add Manager
@@ -423,14 +477,16 @@ function ManagersTab() {
       {/* Manager list */}
       {loading ? (
         <div className="flex items-center justify-center py-16 text-slate-400 gap-2">
-          <Loader2 className="w-5 h-5 animate-spin" />
+          <Loader2 className="w-5 h-5 animate-spin text-[#217346]" />
           <span>Loading managers...</span>
         </div>
       ) : managers.length === 0 ? (
         <div className="border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center py-16 text-slate-400">
-          <Shield className="w-10 h-10 mb-3 opacity-30" />
+          <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-3">
+            <Shield className="w-7 h-7 opacity-40" />
+          </div>
           <p className="font-medium text-slate-600">No managers yet</p>
-          <p className="text-sm mt-1">Click "Add Manager" to create the first manager account</p>
+          <p className="text-sm mt-1 text-slate-400">Click "Add Manager" to create the first manager account</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -440,10 +496,10 @@ function ManagersTab() {
             return (
               <div
                 key={mgr._id}
-                className="bg-white border border-slate-200 rounded-xl px-5 py-4 flex items-center gap-4 hover:border-slate-300 transition-colors"
+                className="bg-white border border-slate-200 rounded-xl px-5 py-4 flex items-center gap-4 hover:border-[#217346]/30 hover:shadow-sm transition-all group"
               >
                 {/* Avatar */}
-                <div className="w-11 h-11 rounded-full bg-[#217346]/10 flex items-center justify-center shrink-0">
+                <div className="w-11 h-11 rounded-full bg-gradient-to-br from-[#217346]/20 to-[#217346]/10 flex items-center justify-center shrink-0 ring-2 ring-[#217346]/10">
                   <span className="text-sm font-bold text-[#217346]">{getInitials(mgr.full_name)}</span>
                 </div>
 
@@ -451,15 +507,14 @@ function ManagersTab() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="font-semibold text-slate-900">{mgr.full_name}</p>
-                    <Badge
-                      variant="outline"
-                      className={isActive
-                        ? "border-green-200 bg-green-50 text-green-700 text-xs"
-                        : "border-slate-200 bg-slate-50 text-slate-500 text-xs"
-                      }
-                    >
+                    <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${
+                      isActive
+                        ? "bg-green-50 text-green-700 border border-green-200"
+                        : "bg-slate-100 text-slate-500 border border-slate-200"
+                    }`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${isActive ? "bg-green-500" : "bg-slate-400"}`} />
                       {isActive ? "Active" : "Inactive"}
-                    </Badge>
+                    </span>
                   </div>
                   <div className="flex items-center gap-4 mt-0.5 flex-wrap">
                     <span className="text-xs text-slate-500 flex items-center gap-1">
@@ -476,26 +531,26 @@ function ManagersTab() {
                   {teamNames.length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-1.5">
                       {teamNames.map(name => (
-                        <Badge key={name} variant="outline" className="text-xs border-blue-200 bg-blue-50 text-blue-700">
+                        <span key={name} className="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-md bg-[#217346]/8 text-[#217346] border border-[#217346]/20">
                           {name}
-                        </Badge>
+                        </span>
                       ))}
                     </div>
                   )}
                 </div>
 
                 {/* Actions */}
-                <div className="flex items-center gap-1 shrink-0">
+                <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button
                     onClick={() => openEditManager(mgr)}
-                    className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-[#217346] transition-colors"
+                    className="p-2 rounded-lg hover:bg-[#217346]/10 text-slate-400 hover:text-[#217346] transition-colors"
                     title="Edit manager"
                   >
                     <Pencil className="w-4 h-4" />
                   </button>
                   <button
                     onClick={() => setResetTarget(mgr)}
-                    className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-orange-600 transition-colors"
+                    className="p-2 rounded-lg hover:bg-orange-50 text-slate-400 hover:text-orange-600 transition-colors"
                     title="Reset password"
                   >
                     <KeyRound className="w-4 h-4" />
@@ -515,24 +570,41 @@ function ManagersTab() {
 
       {/* ── Reset Password Confirm ── */}
       <AlertDialog open={!!resetTarget} onOpenChange={(open) => { if (!resetting && !open) setResetTarget(null); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Reset Password</AlertDialogTitle>
-            <AlertDialogDescription>
-              Reset password for <strong>{resetTarget?.full_name}</strong> to{" "}
-              <code className="bg-slate-100 px-1 rounded font-mono text-sm">Think@2026</code>?{" "}
-              They will be required to change it on next login.
+        <AlertDialogContent className="max-w-sm">
+          {/* Icon */}
+          <div className="flex justify-center mb-4">
+            <div className="w-14 h-14 rounded-2xl bg-orange-50 border border-orange-100 flex items-center justify-center">
+              <KeyRound className="w-7 h-7 text-orange-500" />
+            </div>
+          </div>
+
+          <AlertDialogHeader className="mb-0 text-center">
+            <AlertDialogTitle className="text-center text-slate-900">Reset Password</AlertDialogTitle>
+            <AlertDialogDescription className="text-center mt-2 leading-relaxed">
+              Reset password for{" "}
+              <span className="font-semibold text-slate-700">{resetTarget?.full_name}</span>{" "}
+              to{" "}
+              <code className="bg-orange-50 border border-orange-200 text-orange-600 px-1.5 py-0.5 rounded font-mono text-xs">Think@2026</code>
+              ?
+              <span className="block mt-1.5 text-slate-400 text-xs">They will be prompted to change it on next login.</span>
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={resetting}>Cancel</AlertDialogCancel>
+
+          <AlertDialogFooter className="mt-5 flex-col sm:flex-row gap-2">
+            <AlertDialogCancel
+              onClick={() => setResetTarget(null)}
+              disabled={resetting}
+              className="flex-1"
+            >
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
-              className="bg-orange-600 hover:bg-orange-700"
+              className="flex-1 bg-orange-500 hover:bg-orange-600 gap-2 shadow-sm"
               onClick={handleResetPassword}
               disabled={resetting}
             >
-              {resetting && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-              Reset Password
+              {resetting ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
+              {resetting ? "Resetting..." : "Reset Password"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -540,86 +612,127 @@ function ManagersTab() {
 
       {/* ── Edit Manager Dialog ── */}
       <Dialog open={!!editTarget} onOpenChange={(open) => { if (!editSaving && !open) closeEditManager(); }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Pencil className="w-4 h-4 text-[#217346]" />
-              Edit Manager
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            {/* Full Name */}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                Full Name <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                value={editName}
-                onChange={(e) => { setEditName(e.target.value); setEditErrors(p => { const n = { ...p }; delete n.editName; return n; }); }}
-                placeholder="e.g. Rahul Sharma"
-                className={`w-full h-10 rounded-lg border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346] ${editErrors.editName ? "border-red-400 bg-red-50" : "border-slate-300"}`}
-              />
-              <FieldError msg={editErrors.editName} />
+        <DialogContent className="max-w-lg">
+          <DialogHeader className="pb-2">
+            <div className="flex items-center gap-3 mb-1">
+              <div className="w-10 h-10 rounded-xl bg-[#217346]/10 flex items-center justify-center shrink-0">
+                <Pencil className="w-5 h-5 text-[#217346]" />
+              </div>
+              <div>
+                <DialogTitle className="text-lg font-semibold text-slate-800">Edit Manager</DialogTitle>
+                <DialogDescription className="text-sm text-slate-500 mt-0.5">
+                  Update manager details and team assignments.
+                </DialogDescription>
+              </div>
             </div>
+          </DialogHeader>
 
-            {/* Designation */}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Designation</label>
-              <input
-                type="text"
-                value={editDesignation}
-                onChange={(e) => setEditDesignation(e.target.value)}
-                placeholder="e.g. Engineering Manager"
-                className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]"
-              />
+          <div className="space-y-4 py-1">
+            {/* Full Name + Designation row */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">
+                  Full Name <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={editName}
+                    onChange={(e) => { setEditName(e.target.value); setEditErrors(p => { const n = { ...p }; delete n.editName; return n; }); }}
+                    placeholder="Rahul Sharma"
+                    className={`w-full h-10 rounded-lg border pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]/40 focus:border-[#217346] transition-colors ${editErrors.editName ? "border-red-400 bg-red-50" : "border-slate-200 bg-slate-50 hover:border-slate-300"}`}
+                  />
+                </div>
+                <FieldError msg={editErrors.editName} />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">
+                  Designation
+                </label>
+                <div className="relative">
+                  <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={editDesignation}
+                    onChange={(e) => setEditDesignation(e.target.value)}
+                    placeholder="Eng. Manager"
+                    className="w-full h-10 rounded-lg border border-slate-200 bg-slate-50 hover:border-slate-300 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]/40 focus:border-[#217346] transition-colors"
+                  />
+                </div>
+              </div>
             </div>
 
             {/* Read-only email */}
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Email (read-only)</label>
-              <p className="text-sm text-slate-600 bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
-                {editTarget?.email}
-              </p>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">
+                Email
+              </label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                <p className="w-full h-10 rounded-lg border border-slate-200 bg-slate-100 pl-9 pr-3 text-sm text-slate-500 flex items-center cursor-not-allowed select-none">
+                  {editTarget?.email}
+                </p>
+              </div>
+              <p className="text-xs text-slate-400 mt-1">Email cannot be changed.</p>
             </div>
 
             {/* Teams */}
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                Assigned Teams <span className="text-red-500">*</span>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide">
+                  Assigned Teams <span className="text-red-500">*</span>
+                </label>
                 {editTeamIds.length > 0 && (
-                  <span className="ml-2 text-xs text-slate-400 font-normal">({editTeamIds.length} selected)</span>
+                  <span className="text-xs font-medium text-[#217346] bg-[#217346]/10 px-2 py-0.5 rounded-full">
+                    {editTeamIds.length} selected
+                  </span>
                 )}
-              </label>
+              </div>
               <div className={`border rounded-lg divide-y max-h-44 overflow-y-auto ${editErrors.editTeams ? "border-red-400" : "border-slate-200"}`}>
-                {teams.map(team => (
-                  <label key={team._id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={editTeamIds.includes(team._id)}
-                      onChange={() => {
-                        setEditTeamIds(prev =>
-                          prev.includes(team._id) ? prev.filter(id => id !== team._id) : [...prev, team._id]
-                        );
-                        setEditErrors(p => { const n = { ...p }; delete n.editTeams; return n; });
-                      }}
-                      className="h-4 w-4 rounded border-gray-300 accent-[#217346]"
-                    />
-                    <div className="flex-1">
-                      <p className="text-sm font-medium">{team.team_name}</p>
-                      <p className="text-xs text-slate-400">{team.unique_id}</p>
-                    </div>
-                  </label>
-                ))}
+                {teams.length === 0 ? (
+                  <div className="p-4 text-center text-sm text-slate-400">No engineering teams found</div>
+                ) : (
+                  teams.map(team => {
+                    const isChecked = editTeamIds.includes(team._id);
+                    return (
+                      <label
+                        key={team._id}
+                        className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors ${isChecked ? "bg-[#217346]/5 hover:bg-[#217346]/10" : "hover:bg-slate-50"}`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => {
+                            setEditTeamIds(prev =>
+                              prev.includes(team._id) ? prev.filter(id => id !== team._id) : [...prev, team._id]
+                            );
+                            setEditErrors(p => { const n = { ...p }; delete n.editTeams; return n; });
+                          }}
+                          className="h-4 w-4 rounded border-gray-300 accent-[#217346]"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm font-medium ${isChecked ? "text-[#217346]" : "text-slate-700"}`}>{team.team_name}</p>
+                          <p className="text-xs text-slate-400">{team.unique_id} · {team.department_id?.department_name}</p>
+                        </div>
+                        {isChecked && <CheckCircle2 className="w-4 h-4 text-[#217346] shrink-0" />}
+                      </label>
+                    );
+                  })
+                )}
               </div>
               <FieldError msg={editErrors.editTeams} />
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={closeEditManager} disabled={editSaving}>Cancel</Button>
-            <Button onClick={handleSaveEdit} disabled={editSaving} className="bg-[#217346] hover:bg-[#185c37] text-white gap-2">
-              {editSaving && <Loader2 className="w-4 h-4 animate-spin" />}
-              Save Changes
+
+          <DialogFooter className="pt-2 gap-2">
+            <Button variant="outline" onClick={closeEditManager} disabled={editSaving} className="flex-1 sm:flex-none">
+              Cancel
+            </Button>
+            <Button onClick={handleSaveEdit} disabled={editSaving} className="flex-1 sm:flex-none bg-[#217346] hover:bg-[#185c37] text-white gap-2 shadow-sm">
+              {editSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pencil className="w-4 h-4" />}
+              {editSaving ? "Saving..." : "Save Changes"}
             </Button>
           </DialogFooter>
         </DialogContent>
