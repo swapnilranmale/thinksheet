@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, ReactNode } from "react";
+import { useState, useEffect, useCallback, useRef, ReactNode } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
@@ -332,6 +332,10 @@ function ManagersTab() {
   const [teams, setTeams] = useState<StreamlineTeam[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState({ total: 0, pages: 1 });
+  const PAGE_SIZE = 20;
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Reset password state
   const [resetTarget, setResetTarget] = useState<ManagerRecord | null>(null);
@@ -345,14 +349,15 @@ function ManagersTab() {
   const [editSaving, setEditSaving] = useState(false);
   const [editErrors, setEditErrors] = useState<Record<string, string>>({});
 
-  const loadManagers = useCallback(async () => {
+  const loadManagers = useCallback(async (p = 1, search = "") => {
     try {
       setLoading(true);
       const [res, teamsData] = await Promise.all([
-        authService.getManagers(),
+        authService.getManagers({ page: p, limit: PAGE_SIZE, search: search || undefined }),
         streamlineService.getEngineeringTeams(),
       ]);
       setManagers(res.data.data);
+      setPagination(res.data.pagination);
       setTeams(teamsData);
     } catch (err) {
       toast.error(getErrorMessage(err, "Failed to load managers"));
@@ -362,9 +367,22 @@ function ManagersTab() {
   }, []);
 
   useEffect(() => {
-    loadManagers();
+    loadManagers(1, "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Debounced search
+  function handleSearch(q: string) {
+    setSearchQuery(q);
+    setPage(1);
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => loadManagers(1, q), 400);
+  }
+
+  function goToPage(p: number) {
+    setPage(p);
+    loadManagers(p, searchQuery);
+  }
 
   function getTeamNames(teamIds: string[] = []) {
     return teamIds
@@ -418,23 +436,13 @@ function ManagersTab() {
       });
       toast.success(`Manager ${editName.trim()} updated`);
       closeEditManager();
-      await loadManagers();
+      await loadManagers(page, searchQuery);
     } catch (err) {
       toast.error(getErrorMessage(err, "Failed to update manager"));
     } finally {
       setEditSaving(false);
     }
   }
-
-  const totalTeams = new Set(managers.flatMap(m => m.team_ids || [])).size;
-
-  const filteredManagers = searchQuery.trim()
-    ? managers.filter(m =>
-        m.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        m.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (m.designation || "").toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : managers;
 
   return (
     <div>
@@ -447,19 +455,14 @@ function ManagersTab() {
             <input
               type="text"
               value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
+              onChange={e => handleSearch(e.target.value)}
               placeholder="Search managers…"
               className="w-full h-9 pl-9 pr-3 rounded-lg border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#217346]/50 focus:border-[#217346] transition-all hover:border-slate-400"
             />
           </div>
           <div className="flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap">
             <Users className="w-4 h-4 text-[#217346]" />
-            <span><strong className="text-slate-700">{filteredManagers.length}</strong> manager{filteredManagers.length !== 1 ? "s" : ""}</span>
-          </div>
-          <div className="w-px h-4 bg-slate-200" />
-          <div className="flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap">
-            <Building2 className="w-4 h-4 text-[#217346]" />
-            <span><strong className="text-slate-700">{totalTeams}</strong> team{totalTeams !== 1 ? "s" : ""} assigned</span>
+            <span><strong className="text-slate-700">{pagination.total}</strong> manager{pagination.total !== 1 ? "s" : ""}</span>
           </div>
         </div>
         <Button
@@ -482,18 +485,12 @@ function ManagersTab() {
           <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-3">
             <Shield className="w-7 h-7 opacity-40" />
           </div>
-          <p className="font-medium text-slate-600">No managers yet</p>
-          <p className="text-sm mt-1 text-slate-400">Click "Add Manager" to create the first manager account</p>
-        </div>
-      ) : filteredManagers.length === 0 ? (
-        <div className="border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center py-16 text-slate-400">
-          <Shield className="w-10 h-10 mb-3 opacity-30" />
-          <p className="font-medium text-slate-600">No managers match your search</p>
-          <p className="text-sm mt-1">Try a different search term</p>
+          <p className="font-medium text-slate-600">{searchQuery ? "No managers match your search" : "No managers yet"}</p>
+          <p className="text-sm mt-1 text-slate-400">{searchQuery ? "Try a different search term" : "Click \"Add Manager\" to create the first manager account"}</p>
         </div>
       ) : (
         <div className="space-y-3">
-          {filteredManagers.map((mgr) => {
+          {managers.map((mgr) => {
             const teamNames = getTeamNames(mgr.team_ids);
             const isActive = mgr.is_active !== false;
             const menuOpen = openMenuId === mgr._id;
@@ -579,10 +576,60 @@ function ManagersTab() {
         </div>
       )}
 
+      {/* Pagination */}
+      {pagination.pages > 1 && (
+        <div className="flex items-center justify-between mt-5 pt-4 border-t border-slate-100">
+          <span className="text-xs text-slate-400">
+            Page <strong>{page}</strong> of <strong>{pagination.pages}</strong> · {pagination.total} managers
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => goToPage(page - 1)}
+              disabled={page <= 1 || loading}
+              className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            {Array.from({ length: pagination.pages }, (_, i) => i + 1)
+              .filter(p => p === 1 || p === pagination.pages || Math.abs(p - page) <= 1)
+              .reduce<(number | "…")[]>((acc, p, idx, arr) => {
+                if (idx > 0 && (p as number) - (arr[idx - 1] as number) > 1) acc.push("…");
+                acc.push(p);
+                return acc;
+              }, [])
+              .map((p, i) =>
+                p === "…" ? (
+                  <span key={`ellipsis-${i}`} className="px-1.5 text-slate-400 text-xs">…</span>
+                ) : (
+                  <button
+                    key={p}
+                    onClick={() => goToPage(p as number)}
+                    disabled={loading}
+                    className={`min-w-[30px] h-[30px] rounded-lg text-xs font-medium transition-colors ${
+                      page === p
+                        ? "bg-[#217346] text-white shadow-sm"
+                        : "border border-slate-200 text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    {p}
+                  </button>
+                )
+              )}
+            <button
+              onClick={() => goToPage(page + 1)}
+              disabled={page >= pagination.pages || loading}
+              className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       <CreateManagerDialog
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        onCreated={loadManagers}
+        onCreated={() => loadManagers(1, searchQuery)}
       />
 
       {/* ── Reset Password Confirm ── */}
@@ -734,6 +781,10 @@ function EmployeesTab() {
   const [filterTeamId, setFilterTeamId] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState({ total: 0, pages: 1 });
+  const PAGE_SIZE = 20;
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // View state
   const [viewTarget, setViewTarget] = useState<EmployeeMaster | null>(null);
@@ -755,14 +806,20 @@ function EmployeesTab() {
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [syncResultOpen, setSyncResultOpen] = useState(false);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (p = 1, search = "", teamId = "all") => {
     try {
       setLoading(true);
       const [empRes, teamsData] = await Promise.all([
-        employeeService.getAll(),
+        employeeService.getAll({
+          page: p,
+          limit: PAGE_SIZE,
+          search: search || undefined,
+          teamId: teamId !== "all" ? teamId : undefined,
+        }),
         streamlineService.getEngineeringTeams(),
       ]);
       setEmployees(empRes.data);
+      setPagination(empRes.pagination);
       setTeams(teamsData);
     } catch (err) {
       toast.error(getErrorMessage(err, "Failed to load employees"));
@@ -772,9 +829,27 @@ function EmployeesTab() {
   }, []);
 
   useEffect(() => {
-    loadData();
+    loadData(1, "", "all");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function handleSearch(q: string) {
+    setSearchQuery(q);
+    setPage(1);
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => loadData(1, q, filterTeamId), 400);
+  }
+
+  function handleTeamFilter(teamId: string) {
+    setFilterTeamId(teamId);
+    setPage(1);
+    loadData(1, searchQuery, teamId);
+  }
+
+  function goToPage(p: number) {
+    setPage(p);
+    loadData(p, searchQuery, filterTeamId);
+  }
 
   async function handleSync() {
     setSyncing(true);
@@ -783,7 +858,8 @@ function EmployeesTab() {
       setSyncResult(res.data);
       setSyncResultOpen(true);
       toast.success(`Sync complete — ${res.data.employees_synced} employees synced. Login password = Employee ID.`);
-      await loadData();
+      setPage(1);
+      await loadData(1, searchQuery, filterTeamId);
     } catch (err) {
       toast.error(getErrorMessage(err, "Sync from Streamline failed"));
     } finally {
@@ -816,7 +892,7 @@ function EmployeesTab() {
       });
       toast.success(`${editEmpName.trim()} updated`);
       setEditTarget(null);
-      await loadData();
+      await loadData(page, searchQuery, filterTeamId);
     } catch (err) {
       toast.error(getErrorMessage(err, "Failed to update employee"));
     } finally {
@@ -838,19 +914,6 @@ function EmployeesTab() {
     }
   }
 
-  const filtered = employees
-    .filter(e => filterTeamId === "all" || e.team_id === filterTeamId)
-    .filter(e => {
-      if (!searchQuery.trim()) return true;
-      const q = searchQuery.toLowerCase();
-      return (
-        e.employee_name.toLowerCase().includes(q) ||
-        e.official_email.toLowerCase().includes(q) ||
-        e.unique_id.toLowerCase().includes(q) ||
-        (e.designation || "").toLowerCase().includes(q)
-      );
-    });
-
   return (
     <div>
       {/* ── Toolbar ── */}
@@ -862,20 +925,20 @@ function EmployeesTab() {
             <input
               type="text"
               value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
+              onChange={e => handleSearch(e.target.value)}
               placeholder="Search name, email or ID…"
               className="w-full h-9 pl-9 pr-8 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]/40 focus:border-[#217346] transition-colors hover:border-slate-300"
             />
             {searchQuery && (
               <button
-                onClick={() => setSearchQuery("")}
+                onClick={() => handleSearch("")}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
               >
                 <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M18 6 6 18M6 6l12 12"/></svg>
               </button>
             )}
           </div>
-          <Select value={filterTeamId} onValueChange={setFilterTeamId}>
+          <Select value={filterTeamId} onValueChange={handleTeamFilter}>
             <SelectTrigger className="w-40 h-9 border-slate-200 hover:border-slate-300 focus:ring-[#217346]/40 focus:border-[#217346]">
               <span className="text-sm truncate">
                 {filterTeamId === "all" ? "All Teams" : (teams.find(t => t._id === filterTeamId)?.team_name || "All Teams")}
@@ -888,7 +951,7 @@ function EmployeesTab() {
           </Select>
           <div className="flex items-center gap-1.5 text-sm text-slate-500">
             <Users className="w-4 h-4 text-[#217346]" />
-            <span><strong className="text-slate-700">{filtered.length}</strong> of <strong className="text-slate-700">{employees.length}</strong></span>
+            <span><strong className="text-slate-700">{pagination.total}</strong> employee{pagination.total !== 1 ? "s" : ""}</span>
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
@@ -910,11 +973,11 @@ function EmployeesTab() {
           <Loader2 className="w-7 h-7 animate-spin text-[#217346]" />
           <span className="text-sm">Loading employees...</span>
         </div>
-      ) : filtered.length === 0 ? (
+      ) : employees.length === 0 ? (
         <div className="border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center py-16 text-slate-400">
           <Users className="w-10 h-10 mb-3 opacity-30" />
-          <p className="font-medium text-slate-600">No employees yet</p>
-          <p className="text-sm mt-1">Click "Sync" to import all employees from Streamline360 Resource Master</p>
+          <p className="font-medium text-slate-600">{searchQuery || filterTeamId !== "all" ? "No employees match your filters" : "No employees yet"}</p>
+          <p className="text-sm mt-1">{searchQuery || filterTeamId !== "all" ? "Try adjusting your search or team filter" : "Click \"Sync\" to import all employees from Streamline360 Resource Master"}</p>
         </div>
       ) : (
         <>
@@ -934,7 +997,7 @@ function EmployeesTab() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {filtered.map(emp => (
+                  {employees.map(emp => (
                     <tr key={emp._id} className="hover:bg-slate-50/80 transition-colors group cursor-default">
                       <td className="px-5 py-3.5">
                         <div className="flex items-center gap-3">
@@ -1011,7 +1074,7 @@ function EmployeesTab() {
 
           {/* Mobile card list (< md) */}
           <div className="md:hidden space-y-2.5">
-            {filtered.map(emp => (
+            {employees.map(emp => (
               <div key={emp._id} className="bg-white border border-slate-200 rounded-xl px-4 py-3.5 hover:border-[#217346]/30 hover:shadow-sm transition-all group">
                 <div className="flex items-start gap-3">
                   <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#217346]/20 to-[#217346]/10 flex items-center justify-center text-xs font-bold text-[#217346] shrink-0 ring-2 ring-[#217346]/10 mt-0.5">
@@ -1059,6 +1122,56 @@ function EmployeesTab() {
             ))}
           </div>
         </>
+      )}
+
+      {/* Pagination */}
+      {pagination.pages > 1 && (
+        <div className="flex items-center justify-between mt-5 pt-4 border-t border-slate-100">
+          <span className="text-xs text-slate-400">
+            Page <strong>{page}</strong> of <strong>{pagination.pages}</strong> · {pagination.total} employees
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => goToPage(page - 1)}
+              disabled={page <= 1 || loading}
+              className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            {Array.from({ length: pagination.pages }, (_, i) => i + 1)
+              .filter(p => p === 1 || p === pagination.pages || Math.abs(p - page) <= 1)
+              .reduce<(number | "…")[]>((acc, p, idx, arr) => {
+                if (idx > 0 && (p as number) - (arr[idx - 1] as number) > 1) acc.push("…");
+                acc.push(p);
+                return acc;
+              }, [])
+              .map((p, i) =>
+                p === "…" ? (
+                  <span key={`ellipsis-${i}`} className="px-1.5 text-slate-400 text-xs">…</span>
+                ) : (
+                  <button
+                    key={p}
+                    onClick={() => goToPage(p as number)}
+                    disabled={loading}
+                    className={`min-w-[30px] h-[30px] rounded-lg text-xs font-medium transition-colors ${
+                      page === p
+                        ? "bg-[#217346] text-white shadow-sm"
+                        : "border border-slate-200 text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    {p}
+                  </button>
+                )
+              )}
+            <button
+              onClick={() => goToPage(page + 1)}
+              disabled={page >= pagination.pages || loading}
+              className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
       )}
 
       {/* View Employee Dialog */}
@@ -1578,7 +1691,7 @@ function ProjectsTab() {
       // First get all employees to map email → employee_id
       let emailToEmpId: Record<string, string> = {};
       try {
-        const empRes = await employeeService.getAll();
+        const empRes = await employeeService.getAll({ limit: 1000 });
         for (const e of empRes.data ?? []) {
           if (e.official_email) emailToEmpId[e.official_email] = e._id;
         }

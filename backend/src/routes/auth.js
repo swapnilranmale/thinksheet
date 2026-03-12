@@ -248,13 +248,39 @@ router.post('/create-manager', authenticate, checkActive, authorize(['ADMINISTRA
 // ── GET /api/auth/managers — list all managers (for admin UI) ─────────────────
 router.get('/managers', authenticate, checkActive, authorize(['ADMINISTRATOR']), async (req, res) => {
     try {
-        const managers = await User.find({
+        const filter = {
             role: 'MANAGER',
             tenant_id: TENANT_ID,
-            is_deleted: { $ne: true }
-        }).select('_id full_name email designation is_active team_ids').lean();
+            is_deleted: { $ne: true },
+        };
 
-        res.json({ success: true, data: managers });
+        const page  = Math.max(1, parseInt(req.query.page)  || 1);
+        const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
+        const skip  = (page - 1) * limit;
+
+        if (req.query.search) {
+            const rx = new RegExp(req.query.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+            filter.$or = [
+                { full_name: rx },
+                { email: rx },
+                { designation: rx },
+            ];
+        }
+
+        const [managers, total] = await Promise.all([
+            User.find(filter)
+                .select('_id full_name email designation is_active team_ids')
+                .skip(skip)
+                .limit(limit)
+                .lean(),
+            User.countDocuments(filter),
+        ]);
+
+        res.json({
+            success: true,
+            data: managers,
+            pagination: { total, page, limit, pages: Math.ceil(total / limit) },
+        });
     } catch (err) {
         res.status(500).json({ error: 'Server error', message: err.message });
     }

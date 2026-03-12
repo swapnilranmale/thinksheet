@@ -62,8 +62,14 @@ export const authService = {
       email, password, full_name, designation, team_ids,
     }),
 
-  getManagers: () =>
-    authApi.get<{ success: boolean; data: any[] }>("/managers"),
+  getManagers: (params?: { page?: number; limit?: number; search?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.page)   qs.set("page",   String(params.page));
+    if (params?.limit)  qs.set("limit",  String(params.limit));
+    if (params?.search) qs.set("search", params.search);
+    const q = qs.toString();
+    return authApi.get<{ success: boolean; data: any[]; pagination: { total: number; page: number; limit: number; pages: number } }>(`/managers${q ? `?${q}` : ""}`);
+  },
 
   updateManager: (id: string, data: { team_ids?: string[]; designation?: string; full_name?: string }) =>
     authApi.put<{ success: boolean; user: any }>(`/managers/${id}`, data),

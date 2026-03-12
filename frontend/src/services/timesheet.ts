@@ -360,10 +360,15 @@ export const streamlineService = {
 // ── Employee Management API ─────────────────────────────────────────────────
 
 export const employeeService = {
-  /** List Streamline-synced employees (team-filtered for managers) */
-  getAll: async (teamId?: string) => {
-    const qs = teamId ? `?team_id=${teamId}` : '';
-    const res = await api.get<{ success: boolean; data: EmployeeMaster[] }>(`/employees${qs}`);
+  /** List Streamline-synced employees with pagination + search */
+  getAll: async (params?: { teamId?: string; page?: number; limit?: number; search?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.teamId)  qs.set("team_id", params.teamId);
+    if (params?.page)    qs.set("page",    String(params.page));
+    if (params?.limit)   qs.set("limit",   String(params.limit));
+    if (params?.search)  qs.set("search",  params.search);
+    const q = qs.toString();
+    const res = await api.get<{ success: boolean; data: EmployeeMaster[]; pagination: { total: number; page: number; limit: number; pages: number } }>(`/employees${q ? `?${q}` : ""}`);
     return res.data;
   },
 

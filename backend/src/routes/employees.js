@@ -74,12 +74,36 @@ router.get('/',
                 filter.team_id = req.query.team_id;
             }
 
-            const employees = await Employee.find(filter)
-                .select('_id employee_name official_email unique_id designation team_id team_name profile_resource actual_resource resource_id is_active')
-                .sort({ createdAt: -1 })
-                .lean();
+            // Pagination & search
+            const page  = Math.max(1, parseInt(req.query.page)  || 1);
+            const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
+            const skip  = (page - 1) * limit;
 
-            res.json({ success: true, data: employees });
+            if (req.query.search) {
+                const rx = new RegExp(req.query.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+                filter.$or = [
+                    { employee_name: rx },
+                    { official_email: rx },
+                    { designation: rx },
+                    { unique_id: rx },
+                ];
+            }
+
+            const [employees, total] = await Promise.all([
+                Employee.find(filter)
+                    .select('_id employee_name official_email unique_id designation team_id team_name profile_resource actual_resource resource_id is_active')
+                    .sort({ createdAt: -1 })
+                    .skip(skip)
+                    .limit(limit)
+                    .lean(),
+                Employee.countDocuments(filter),
+            ]);
+
+            res.json({
+                success: true,
+                data: employees,
+                pagination: { total, page, limit, pages: Math.ceil(total / limit) },
+            });
         } catch (err) {
             res.status(500).json({ error: 'Server error', message: err.message });
         }
