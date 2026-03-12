@@ -443,44 +443,14 @@ export default function EmployeeManagementPage() {
   return (
     <DashboardLayout>
       <div className="max-w-6xl mx-auto">
-        {/* Header with animation */}
+        {/* Header */}
         <div className="mb-8 animate-slide-up">
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900 animate-text-fade">My Workspace</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900 animate-text-fade">
+            {activeTab === "projects" ? "My Projects" : "My Employees"}
+          </h1>
           <p className="text-slate-500 text-sm mt-2 animate-text-fade" style={{ animationDelay: "0.1s" }}>
-            Employees and projects in your assigned teams
+            {activeTab === "projects" ? "Projects in your assigned teams" : "Employees in your assigned teams"}
           </p>
-        </div>
-
-        {/* Tabs with enhanced styling and animations */}
-        <div className="flex gap-2 mb-8 animate-slide-up" style={{ animationDelay: "0.1s" }}>
-          <button
-            onClick={() => navigate("/workspace?tab=projects")}
-            className={`flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all duration-300 relative group ${
-              activeTab === "projects"
-                ? "bg-white text-[#217346] shadow-lg shadow-[#217346]/20 border border-[#217346]/20"
-                : "text-slate-500 hover:text-slate-700 bg-slate-50 hover:bg-white border border-transparent hover:border-slate-200"
-            }`}
-          >
-            <FolderOpen className={`w-4 h-4 transition-transform duration-300 ${activeTab === "projects" ? "scale-110" : "group-hover:scale-105"}`} />
-            My Projects
-            {activeTab === "projects" && (
-              <div className="absolute bottom-0 left-0 right-0 h-1 bg-[#217346] rounded-full animate-slide-up" />
-            )}
-          </button>
-          <button
-            onClick={() => navigate("/workspace?tab=employees")}
-            className={`flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all duration-300 relative group ${
-              activeTab === "employees"
-                ? "bg-white text-[#217346] shadow-lg shadow-[#217346]/20 border border-[#217346]/20"
-                : "text-slate-500 hover:text-slate-700 bg-slate-50 hover:bg-white border border-transparent hover:border-slate-200"
-            }`}
-          >
-            <Users className={`w-4 h-4 transition-transform duration-300 ${activeTab === "employees" ? "scale-110" : "group-hover:scale-105"}`} />
-            My Employees
-            {activeTab === "employees" && (
-              <div className="absolute bottom-0 left-0 right-0 h-1 bg-[#217346] rounded-full animate-slide-up" />
-            )}
-          </button>
         </div>
 
         {/* ── Projects Tab ── */}
