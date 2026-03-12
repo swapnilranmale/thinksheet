@@ -308,6 +308,48 @@ router.put('/managers/:id', authenticate, checkActive, authorize(['ADMINISTRATOR
     }
 });
 
+// ── PUT /api/auth/profile — update own profile fields ────────────────────────
+router.put('/profile', authenticate, checkActive, async (req, res) => {
+    try {
+        const { full_name, designation } = req.body;
+
+        if (!full_name || !full_name.trim()) {
+            return res.status(400).json({ error: 'full_name is required' });
+        }
+
+        const user = await User.findById(req.user._id);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        user.full_name = full_name.trim();
+
+        // Managers and Administrators can update their designation
+        if (['MANAGER', 'ADMINISTRATOR'].includes(user.role) && designation !== undefined) {
+            user.designation = designation.trim();
+        }
+
+        await user.save();
+
+        const token = makeToken(user);
+        res.json({
+            success: true,
+            token,
+            user: {
+                _id: user._id,
+                email: user.email,
+                full_name: user.full_name,
+                role: user.role,
+                tenant_id: user.tenant_id,
+                must_change_password: user.must_change_password,
+                designation: user.designation
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ error: 'Server error', message: err.message });
+    }
+});
+
 // ── POST /api/auth/reset-password — admin resets manager, manager resets employee
 router.post('/reset-password', authenticate, checkActive, authorize(['ADMINISTRATOR', 'MANAGER']), async (req, res) => {
     try {

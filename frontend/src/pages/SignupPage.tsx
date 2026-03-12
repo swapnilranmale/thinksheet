@@ -3,7 +3,7 @@ import { useState, FormEvent } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { authService } from "@/lib/auth";
 import { useAuth } from "@/contexts/AuthContext";
-import { Loader2, Clock, Mail, Lock, User, ArrowRight, CheckCircle2 } from "lucide-react";
+import { Loader2, Clock, Mail, Lock, User, ArrowRight, CheckCircle2, Eye, EyeOff } from "lucide-react";
 
 export default function SignupPage() {
   const navigate = useNavigate();
@@ -15,6 +15,8 @@ export default function SignupPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -144,13 +146,21 @@ export default function SignupPage() {
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Min. 6 characters"
                   required
-                  className="w-full h-11 rounded-xl border border-slate-300 pl-10 pr-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#217346] focus:border-transparent transition-shadow"
+                  className="w-full h-11 rounded-xl border border-slate-300 pl-10 pr-10 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#217346] focus:border-transparent transition-shadow"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors duration-200"
+                  tabIndex={-1}
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
               </div>
             </div>
 
@@ -159,13 +169,21 @@ export default function SignupPage() {
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input
-                  type="password"
+                  type={showConfirmPassword ? "text" : "password"}
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Repeat password"
                   required
-                  className="w-full h-11 rounded-xl border border-slate-300 pl-10 pr-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#217346] focus:border-transparent transition-shadow"
+                  className="w-full h-11 rounded-xl border border-slate-300 pl-10 pr-10 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#217346] focus:border-transparent transition-shadow"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors duration-200"
+                  tabIndex={-1}
+                >
+                  {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
               </div>
             </div>
 

@@ -12,6 +12,7 @@ import EmployeeManagerMappingPage from "./pages/EmployeeManagerMappingPage";
 import EmployeeManagementPage from "./pages/EmployeeManagementPage";
 import ProjectDashboardPage from "./pages/ProjectDashboardPage";
 import AdminProjectsDashboardPage from "./pages/AdminProjectsDashboardPage";
+import AccountPage from "./pages/AccountPage";
 
 function RoleRedirect() {
   const { user, isLoading } = useAuth();
@@ -66,6 +67,14 @@ export default function App() {
         }
       />
       <Route
+        path="/timesheet/manager"
+        element={
+          <ProtectedRoute roles={["MANAGER"]}>
+            <ManagerTimesheetReviewPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/projects/:projectId"
         element={
           <ProtectedRoute roles={["MANAGER"]}>
@@ -91,6 +100,16 @@ export default function App() {
         element={
           <ProtectedRoute roles={["ADMINISTRATOR"]}>
             <AdminProjectsDashboardPage />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Account — all roles */}
+      <Route
+        path="/account"
+        element={
+          <ProtectedRoute roles={["EMPLOYEE", "MANAGER", "ADMINISTRATOR"]}>
+            <AccountPage />
           </ProtectedRoute>
         }
       />

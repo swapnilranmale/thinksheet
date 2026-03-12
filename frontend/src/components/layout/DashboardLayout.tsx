@@ -192,6 +192,13 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
               exact={false}
               collapsed={collapsed}
             />
+            <SidebarLink
+              to="/timesheet/manager"
+              icon={Clock}
+              label="Timesheets"
+              onClick={() => handleNavClick("/timesheet/manager")}
+              collapsed={collapsed}
+            />
           </div>
         )}
 
@@ -234,67 +241,84 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         )}
       </nav>
 
-      {/* User card with expandable menu + collapse button */}
-      <div className="mx-3 mb-3 mt-auto pt-3 space-y-3 animate-slide-up border-t border-white/5 flex flex-col" style={{ animationDelay: "0.1s" }}>
-        {/* User card with expandable menu */}
-        <div className="bg-gradient-to-br from-white/8 to-white/4 rounded-xl border border-white/10 hover:border-white/20 transition-colors duration-300 overflow-hidden">
-          {/* User info button - clickable to expand */}
-          <button
-            onClick={() => setUserMenuOpen(!userMenuOpen)}
-            className="w-full flex items-center gap-2.5 p-3 group hover:bg-white/5 transition-colors duration-300"
-          >
-            {/* Avatar with animation */}
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#217346] to-emerald-600 flex items-center justify-center shrink-0 shadow-md group-hover:shadow-lg transition-all duration-300 group-hover:scale-110">
+      {/* User card + collapse button */}
+      <div className="mx-3 mb-3 mt-auto pt-3 border-t border-white/5 flex flex-col gap-2 animate-slide-up" style={{ animationDelay: "0.1s" }}>
+
+        {collapsed ? (
+          /* ── Collapsed: avatar + logout icon stacked ── */
+          <div className="flex flex-col items-center gap-1.5">
+            <button
+              onClick={() => navigate("/account")}
+              title={user?.full_name}
+              className="w-9 h-9 rounded-full bg-gradient-to-br from-[#217346] to-emerald-600 flex items-center justify-center shadow-md hover:shadow-lg hover:scale-110 transition-all duration-300"
+            >
               <span className="text-xs font-bold text-white">
                 {user?.full_name?.charAt(0).toUpperCase()}
               </span>
-            </div>
-            <div className="min-w-0 flex-1 text-left">
-              <p className="text-xs font-semibold text-white truncate leading-tight">{user?.full_name}</p>
-              <span
+            </button>
+            <button
+              onClick={handleLogout}
+              title="Sign out"
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-white/40 hover:text-red-400 hover:bg-red-500/15 transition-all duration-300"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ) : (
+          /* ── Expanded: full user card with dropdown ── */
+          <div className="bg-gradient-to-br from-white/8 to-white/4 rounded-xl border border-white/10 hover:border-white/20 transition-colors duration-300 overflow-hidden">
+            <button
+              onClick={() => setUserMenuOpen(!userMenuOpen)}
+              className="w-full flex items-center gap-2.5 p-3 group hover:bg-white/5 transition-colors duration-300"
+            >
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#217346] to-emerald-600 flex items-center justify-center shrink-0 shadow-md group-hover:shadow-lg transition-all duration-300 group-hover:scale-110">
+                <span className="text-xs font-bold text-white">
+                  {user?.full_name?.charAt(0).toUpperCase()}
+                </span>
+              </div>
+              <div className="min-w-0 flex-1 text-left">
+                <p className="text-xs font-semibold text-white truncate leading-tight">{user?.full_name}</p>
+                <span
+                  className={clsx(
+                    "inline-block text-[10px] font-medium px-1.5 py-0.5 rounded-full mt-0.5 transition-all duration-300",
+                    roleBg[user?.role || ""] || "bg-white/10 text-white/50"
+                  )}
+                >
+                  {roleLabel[user?.role || ""] || user?.role}
+                </span>
+              </div>
+              <ChevronDown
                 className={clsx(
-                  "inline-block text-[10px] font-medium px-1.5 py-0.5 rounded-full mt-0.5 transition-all duration-300",
-                  roleBg[user?.role || ""] || "bg-white/10 text-white/50"
+                  "w-4 h-4 text-white/40 shrink-0 transition-transform duration-300",
+                  userMenuOpen && "rotate-180"
                 )}
-              >
-                {roleLabel[user?.role || ""] || user?.role}
-              </span>
-            </div>
-            <ChevronDown
-              className={clsx(
-                "w-4 h-4 text-white/40 shrink-0 transition-transform duration-300",
-                userMenuOpen && "rotate-180"
-              )}
-            />
-          </button>
+              />
+            </button>
 
-          {/* Expandable menu - Profile + Sign out */}
-          {userMenuOpen && (
-            <div className="border-t border-white/10 bg-white/5 animate-slide-up space-y-0" style={{ animationDuration: "200ms" }}>
-              <button
-                onClick={() => {
-                  navigate("/account");
-                  setUserMenuOpen(false);
-                }}
-                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-white/70 hover:text-white hover:bg-white/10 transition-all duration-300 group border-b border-white/5"
-              >
-                <Settings className="w-3.5 h-3.5 text-white/40 group-hover:text-[#217346] transition-colors duration-300" />
-                <span>Profile</span>
-              </button>
-              <button
-                onClick={handleLogout}
-                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-white/50 hover:bg-red-500/15 hover:text-red-400 transition-all duration-300 group"
-              >
-                <LogOut className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform duration-300" />
-                <span>Sign out</span>
-              </button>
-            </div>
-          )}
-        </div>
+            {userMenuOpen && (
+              <div className="border-t border-white/10 bg-white/5 animate-slide-up space-y-0" style={{ animationDuration: "200ms" }}>
+                <button
+                  onClick={() => { navigate("/account"); setUserMenuOpen(false); }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-white/70 hover:text-white hover:bg-white/10 transition-all duration-300 group border-b border-white/5"
+                >
+                  <Settings className="w-3.5 h-3.5 text-white/40 group-hover:text-[#217346] transition-colors duration-300" />
+                  <span>Profile</span>
+                </button>
+                <button
+                  onClick={handleLogout}
+                  className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-white/50 hover:bg-red-500/15 hover:text-red-400 transition-all duration-300 group"
+                >
+                  <LogOut className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform duration-300" />
+                  <span>Sign out</span>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
-        {/* Collapse sidebar button - at the very bottom */}
+        {/* Collapse / expand toggle */}
         <button
-          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+          onClick={() => { setSidebarCollapsed(!sidebarCollapsed); setUserMenuOpen(false); }}
           className={clsx(
             "w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg transition-all duration-300 group font-medium",
             collapsed

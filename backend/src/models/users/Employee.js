@@ -39,6 +39,23 @@ const employeeSchema = new mongoose.Schema({
         type: String,
         default: ''
     },
+    // Streamline360 Resource Master fields
+    profile_resource: {
+        type: String,
+        default: ''
+    },
+    actual_resource: {
+        type: String,
+        default: ''
+    },
+    resource_id: {
+        type: String,
+        default: ''
+    },
+    synced_from_streamline: {
+        type: Boolean,
+        default: false
+    },
     is_active: {
         type: Boolean,
         default: true

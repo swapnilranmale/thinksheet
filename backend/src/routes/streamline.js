@@ -636,12 +636,26 @@ router.post('/sync', authenticate, checkActive, authorize(['ADMINISTRATOR']), as
                     continue;
                 }
 
+                // Extract Profile Resource and Actual Resource from resource record
+                const rawProf = r.profile_ttpl_id || r.profile_id || r.ttpl_id || r.employee_profile_id || null;
+                const profileResource = (
+                    (rawProf && typeof rawProf === 'object'
+                        ? (rawProf.full_name || rawProf.name || rawProf.employee_name || '')
+                        : (r.profile_resource || ''))
+                ).trim();
+                const actualResource = (r.actual_resource || '').trim();
+                const resourceId = String(r.resource_id || '').trim();
+
                 const empUpdate = {
                     employee_name: empName,
                     official_email: empEmail,
                     designation,
                     team_id: teamId,
                     team_name: teamName,
+                    profile_resource: profileResource,
+                    actual_resource: actualResource,
+                    resource_id: resourceId,
+                    synced_from_streamline: true,
                     is_active: true,
                     is_deleted: false,
                     tenant_id: tenantId,

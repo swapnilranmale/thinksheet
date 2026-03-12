@@ -123,6 +123,11 @@ export interface EmployeeMaster {
   department_id?: string;
   team_id?: string;
   team_name?: string;
+  // Streamline360 Resource Master fields
+  profile_resource?: string;
+  actual_resource?: string;
+  resource_id?: string;
+  synced_from_streamline?: boolean;
 }
 
 // ── Employee Timesheet API ────────────────────────────────────────────────────
@@ -355,20 +360,14 @@ export const streamlineService = {
 // ── Employee Management API ─────────────────────────────────────────────────
 
 export const employeeService = {
-  /** List employees (team-filtered for managers) */
+  /** List Streamline-synced employees (team-filtered for managers) */
   getAll: async (teamId?: string) => {
     const qs = teamId ? `?team_id=${teamId}` : '';
     const res = await api.get<{ success: boolean; data: EmployeeMaster[] }>(`/employees${qs}`);
     return res.data;
   },
 
-  /** Create single employee */
-  create: async (data: { emp_id: string; emp_email: string; emp_name: string; team_id: string; team_name?: string; designation?: string }) => {
-    const res = await api.post<{ success: boolean; data: EmployeeMaster; user_created: boolean }>('/employees', data);
-    return res.data;
-  },
-
-  /** Update employee */
+  /** Update employee metadata */
   update: async (id: string, data: { emp_name?: string; designation?: string; team_id?: string; team_name?: string }) => {
     const res = await api.put<{ success: boolean; data: EmployeeMaster }>(`/employees/${id}`, data);
     return res.data;
@@ -378,27 +377,6 @@ export const employeeService = {
   remove: async (id: string) => {
     const res = await api.delete<{ success: boolean; message: string }>(`/employees/${id}`);
     return res.data;
-  },
-
-  /** Bulk upload employees */
-  bulkUpload: async (file: File, teamId: string, teamName: string) => {
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('team_id', teamId);
-    formData.append('team_name', teamName);
-    const res = await api.post<{
-      success: boolean;
-      data: { created: any[]; skipped: any[]; errors: any[] };
-      summary: { total: number; created: number; skipped: number; errors: number };
-    }>('/employees/bulk-upload', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
-    return res.data;
-  },
-
-  /** Download CSV template */
-  downloadTemplate: () => {
-    window.open('/api/employees/download-template', '_blank');
   },
 };
 

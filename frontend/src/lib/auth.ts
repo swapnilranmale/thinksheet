@@ -32,6 +32,7 @@ export interface AuthUser {
   role: "EMPLOYEE" | "MANAGER" | "ADMINISTRATOR";
   tenant_id: string;
   must_change_password: boolean;
+  designation?: string;
 }
 
 interface AuthResponse {
@@ -72,4 +73,7 @@ export const authService = {
 
   resetPasswordByEmail: (employee_email: string) =>
     authApi.post<{ success: boolean; message: string }>("/reset-password", { employee_email }),
+
+  updateProfile: (full_name: string, designation?: string) =>
+    authApi.put<AuthResponse>("/profile", { full_name, designation }),
 };

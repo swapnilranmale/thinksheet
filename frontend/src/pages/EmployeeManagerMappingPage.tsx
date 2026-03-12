@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, ReactNode } from "react";
+import { useState, useEffect, useCallback, ReactNode } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
@@ -39,7 +39,6 @@ import {
   Mail,
   Briefcase,
   KeyRound,
-  Upload,
   Download,
   ScrollText,
   ChevronLeft,
@@ -736,24 +735,6 @@ function EmployeesTab() {
   const [searchQuery, setSearchQuery] = useState("");
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
-  // Upload state
-  const [uploadOpen, setUploadOpen] = useState(false);
-  const [uploadTeamId, setUploadTeamId] = useState("");
-  const [uploadFile, setUploadFile] = useState<File | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadResult, setUploadResult] = useState<any>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Create state
-  const [createOpen, setCreateOpen] = useState(false);
-  const [newEmpId, setNewEmpId] = useState("");
-  const [newEmpEmail, setNewEmpEmail] = useState("");
-  const [newEmpName, setNewEmpName] = useState("");
-  const [newEmpTeamId, setNewEmpTeamId] = useState("");
-  const [newEmpDesignation, setNewEmpDesignation] = useState("");
-  const [creating, setCreating] = useState(false);
-  const [createErrors, setCreateErrors] = useState<Record<string, string>>({});
-
   // View state
   const [viewTarget, setViewTarget] = useState<EmployeeMaster | null>(null);
 
@@ -807,65 +788,6 @@ function EmployeesTab() {
       toast.error(getErrorMessage(err, "Sync from Streamline failed"));
     } finally {
       setSyncing(false);
-    }
-  }
-
-  async function handleUpload() {
-    if (!uploadTeamId || !uploadFile) {
-      toast.error("Please select a team and file");
-      return;
-    }
-    setUploading(true);
-    setUploadResult(null);
-    try {
-      const team = teams.find(t => t._id === uploadTeamId);
-      const result = await employeeService.bulkUpload(uploadFile, uploadTeamId, team?.team_name || "");
-      setUploadResult(result);
-      toast.success(`Upload complete: ${result.summary.created} created, ${result.summary.skipped} skipped, ${result.summary.errors} errors`);
-      await loadData();
-    } catch (err) {
-      toast.error(getErrorMessage(err, "Upload failed"));
-    } finally {
-      setUploading(false);
-    }
-  }
-
-  async function handleCreate() {
-    const errs: Record<string, string> = {};
-    if (!newEmpId.trim()) errs.emp_id = "Employee ID is required";
-    else if (!EMP_ID_RE.test(newEmpId.trim())) errs.emp_id = "Employee ID must be numeric (e.g. 340)";
-    if (!newEmpName.trim()) errs.emp_name = "Full name is required";
-    else if (newEmpName.trim().length < 2) errs.emp_name = "Name must be at least 2 characters";
-    else if (!NAME_RE.test(newEmpName.trim())) errs.emp_name = "Name can only contain letters, spaces, and hyphens";
-    if (!newEmpEmail.trim()) errs.emp_email = "Email is required";
-    else if (!MGR_EMAIL_RE.test(newEmpEmail.trim())) errs.emp_email = "Enter a valid email address";
-    if (!newEmpTeamId) errs.team_id = "Please select a team";
-    if (Object.keys(errs).length > 0) { setCreateErrors(errs); return; }
-
-    setCreating(true);
-    try {
-      const team = teams.find(t => t._id === newEmpTeamId);
-      await employeeService.create({
-        emp_id: newEmpId.trim(),
-        emp_email: newEmpEmail.trim(),
-        emp_name: newEmpName.trim(),
-        team_id: newEmpTeamId,
-        team_name: team?.team_name,
-        designation: newEmpDesignation.trim(),
-      });
-      toast.success(`Employee ${newEmpName.trim()} created. Login: ${newEmpEmail.trim()} / ${newEmpId.trim()}`);
-      setCreateOpen(false);
-      setNewEmpId(""); setNewEmpEmail(""); setNewEmpName(""); setNewEmpTeamId(""); setNewEmpDesignation(""); setCreateErrors({});
-      await loadData();
-    } catch (err) {
-      const msg = getErrorMessage(err, "Failed to create employee");
-      if (msg.toLowerCase().includes("already exists") || msg.toLowerCase().includes("email")) {
-        setCreateErrors({ emp_email: "An employee with this email already exists" });
-      } else {
-        toast.error(msg);
-      }
-    } finally {
-      setCreating(false);
     }
   }
 
@@ -980,14 +902,6 @@ function EmployeesTab() {
             {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
             {syncing ? "Syncing..." : "Sync"}
           </Button>
-          <Button variant="outline" onClick={() => setUploadOpen(true)} className="gap-2 whitespace-nowrap">
-            <Upload className="w-4 h-4" />
-            Bulk Upload
-          </Button>
-          <Button onClick={() => setCreateOpen(true)} className="bg-[#217346] hover:bg-[#185c37] text-white gap-2 whitespace-nowrap shadow-sm">
-            <Plus className="w-4 h-4" />
-            Add Employee
-          </Button>
         </div>
       </div>
 
@@ -1000,7 +914,7 @@ function EmployeesTab() {
         <div className="border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center py-16 text-slate-400">
           <Users className="w-10 h-10 mb-3 opacity-30" />
           <p className="font-medium text-slate-600">No employees yet</p>
-          <p className="text-sm mt-1">Click "Sync" to import all employees from Resource Master, or add manually</p>
+          <p className="text-sm mt-1">Click "Sync" to import all employees from Streamline360 Resource Master</p>
         </div>
       ) : (
         <>
@@ -1012,6 +926,8 @@ function EmployeesTab() {
                   <tr>
                     <th className="text-left px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Employee</th>
                     <th className="text-left px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Emp ID</th>
+                    <th className="text-left px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Resource ID</th>
+                    <th className="text-left px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Actual Resource</th>
                     <th className="text-left px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Email</th>
                     <th className="text-left px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Team</th>
                     <th className="text-right px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Actions</th>
@@ -1034,6 +950,10 @@ function EmployeesTab() {
                       <td className="px-5 py-3.5">
                         <span className="font-mono text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded-md">{emp.unique_id}</span>
                       </td>
+                      <td className="px-5 py-3.5">
+                        <span className="font-mono text-xs text-slate-500">{emp.resource_id || '—'}</span>
+                      </td>
+                      <td className="px-5 py-3.5 text-slate-600 text-sm whitespace-nowrap">{emp.actual_resource || '—'}</td>
                       <td className="px-5 py-3.5 text-slate-500 text-sm whitespace-nowrap">{emp.official_email}</td>
                       <td className="px-5 py-3.5">
                         {emp.team_name ? (
@@ -1140,214 +1060,6 @@ function EmployeesTab() {
           </div>
         </>
       )}
-
-      {/* Bulk Upload Dialog */}
-      <Dialog open={uploadOpen} onOpenChange={(v) => { if (!v) { setUploadFile(null); setUploadResult(null); setUploadTeamId(""); } setUploadOpen(v); }}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader className="pb-2">
-            <div className="flex items-center gap-3 mb-1">
-              <div className="w-10 h-10 rounded-xl bg-[#217346]/10 flex items-center justify-center shrink-0">
-                <Upload className="w-5 h-5 text-[#217346]" />
-              </div>
-              <div>
-                <DialogTitle className="text-lg font-semibold text-slate-800">Bulk Upload Employees</DialogTitle>
-                <DialogDescription className="text-sm text-slate-500 mt-0.5">Upload a CSV or Excel file to add multiple employees at once.</DialogDescription>
-              </div>
-            </div>
-          </DialogHeader>
-          <div className="space-y-4 py-1">
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">
-                Team <span className="text-red-500">*</span>
-              </label>
-              <Select value={uploadTeamId} onValueChange={setUploadTeamId}>
-                <SelectTrigger className="border-slate-200 bg-slate-50 hover:border-slate-300 focus:ring-[#217346]/40 focus:border-[#217346]">
-                  <SelectValue placeholder="Select team..." />
-                </SelectTrigger>
-                <SelectContent searchable>
-                  {teams.map(t => (
-                    <SelectItem key={t._id} value={t._id}>{t.team_name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">
-                File (CSV or Excel) <span className="text-red-500">*</span>
-              </label>
-              <div
-                onClick={() => fileInputRef.current?.click()}
-                className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all ${uploadFile ? "border-[#217346]/40 bg-[#217346]/5" : "border-slate-200 hover:border-[#217346]/50 hover:bg-[#217346]/5"}`}
-              >
-                <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={(e) => setUploadFile(e.target.files?.[0] || null)} />
-                {uploadFile ? (
-                  <div className="flex flex-col items-center gap-2">
-                    <div className="w-10 h-10 rounded-xl bg-[#217346]/10 flex items-center justify-center">
-                      <CheckCircle2 className="w-5 h-5 text-[#217346]" />
-                    </div>
-                    <p className="text-sm font-medium text-[#217346]">{uploadFile.name}</p>
-                    <p className="text-xs text-slate-400">Click to change file</p>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center gap-2">
-                    <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center">
-                      <Upload className="w-5 h-5 text-slate-400" />
-                    </div>
-                    <p className="text-sm text-slate-600 font-medium">Click to select file</p>
-                    <p className="text-xs text-slate-400">CSV or Excel · Required columns: Emp_ID, Emp_Email, Emp_Name</p>
-                  </div>
-                )}
-              </div>
-            </div>
-            <button onClick={() => employeeService.downloadTemplate()} className="flex items-center gap-1.5 text-sm text-[#217346] hover:underline">
-              <Download className="w-3.5 h-3.5" />
-              Download CSV template
-            </button>
-            {uploadResult && (
-              <div className="rounded-xl border border-slate-200 overflow-hidden">
-                <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-200">
-                  <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Upload Results</p>
-                </div>
-                <div className="grid grid-cols-3 divide-x divide-slate-100">
-                  <div className="p-3 text-center">
-                    <p className="text-xl font-bold text-green-600">{uploadResult.summary.created}</p>
-                    <p className="text-xs text-slate-400 mt-0.5">Created</p>
-                  </div>
-                  <div className="p-3 text-center">
-                    <p className="text-xl font-bold text-orange-500">{uploadResult.summary.skipped}</p>
-                    <p className="text-xs text-slate-400 mt-0.5">Skipped</p>
-                  </div>
-                  <div className="p-3 text-center">
-                    <p className="text-xl font-bold text-red-500">{uploadResult.summary.errors}</p>
-                    <p className="text-xs text-slate-400 mt-0.5">Errors</p>
-                  </div>
-                </div>
-                {uploadResult.data.errors.length > 0 && (
-                  <details className="border-t border-slate-100">
-                    <summary className="cursor-pointer text-xs text-red-600 font-medium px-4 py-2 hover:bg-red-50 transition-colors">View {uploadResult.data.errors.length} error{uploadResult.data.errors.length !== 1 ? "s" : ""}</summary>
-                    <ul className="px-4 pb-3 space-y-1">
-                      {uploadResult.data.errors.map((e: any, i: number) => (
-                        <li key={i} className="text-xs text-red-500">• {e.emp_id || e.email || 'Row'}: {e.reason}</li>
-                      ))}
-                    </ul>
-                  </details>
-                )}
-              </div>
-            )}
-          </div>
-          <DialogFooter className="pt-2 gap-2">
-            <Button variant="outline" onClick={() => setUploadOpen(false)} disabled={uploading} className="flex-1 sm:flex-none">Cancel</Button>
-            <Button onClick={handleUpload} disabled={uploading || !uploadFile || !uploadTeamId} className="flex-1 sm:flex-none bg-[#217346] hover:bg-[#185c37] text-white gap-2 shadow-sm">
-              {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-              {uploading ? "Uploading..." : "Upload"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Create Employee Dialog */}
-      <Dialog open={createOpen} onOpenChange={(v) => { if (!creating && !v) { setNewEmpId(""); setNewEmpEmail(""); setNewEmpName(""); setNewEmpTeamId(""); setNewEmpDesignation(""); setCreateErrors({}); } setCreateOpen(v); }}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader className="pb-2">
-            <div className="flex items-center gap-3 mb-1">
-              <div className="w-10 h-10 rounded-xl bg-[#217346]/10 flex items-center justify-center shrink-0">
-                <UserPlus className="w-5 h-5 text-[#217346]" />
-              </div>
-              <div>
-                <DialogTitle className="text-lg font-semibold text-slate-800">Add Employee</DialogTitle>
-                <DialogDescription className="text-sm text-slate-500 mt-0.5">Create a new employee account and assign to a team.</DialogDescription>
-              </div>
-            </div>
-          </DialogHeader>
-          <div className="space-y-4 py-1">
-            {/* Emp ID + Name row */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Employee ID <span className="text-red-500">*</span></label>
-                <div className="relative">
-                  <IdCard className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                  <input
-                    type="text"
-                    value={newEmpId}
-                    onChange={e => { setNewEmpId(e.target.value); if (createErrors.emp_id) setCreateErrors(p => ({ ...p, emp_id: "" })); }}
-                    placeholder="e.g. 340"
-                    className={`w-full h-10 rounded-lg border pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]/40 focus:border-[#217346] transition-colors ${createErrors.emp_id ? "border-red-400 bg-red-50" : "border-slate-200 bg-slate-50 hover:border-slate-300"}`}
-                  />
-                </div>
-                <FieldError msg={createErrors.emp_id} />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Designation</label>
-                <div className="relative">
-                  <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                  <input
-                    type="text"
-                    value={newEmpDesignation}
-                    onChange={e => setNewEmpDesignation(e.target.value)}
-                    placeholder="Software Engineer"
-                    className="w-full h-10 rounded-lg border border-slate-200 bg-slate-50 hover:border-slate-300 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]/40 focus:border-[#217346] transition-colors"
-                  />
-                </div>
-              </div>
-            </div>
-            {/* Full Name */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Full Name <span className="text-red-500">*</span></label>
-              <div className="relative">
-                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                <input
-                  type="text"
-                  value={newEmpName}
-                  onChange={e => { setNewEmpName(e.target.value); if (createErrors.emp_name) setCreateErrors(p => ({ ...p, emp_name: "" })); }}
-                  placeholder="Abhay Ahire"
-                  className={`w-full h-10 rounded-lg border pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]/40 focus:border-[#217346] transition-colors ${createErrors.emp_name ? "border-red-400 bg-red-50" : "border-slate-200 bg-slate-50 hover:border-slate-300"}`}
-                />
-              </div>
-              <FieldError msg={createErrors.emp_name} />
-            </div>
-            {/* Email */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Email <span className="text-red-500">*</span></label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                <input
-                  type="email"
-                  value={newEmpEmail}
-                  onChange={e => { setNewEmpEmail(e.target.value); if (createErrors.emp_email) setCreateErrors(p => ({ ...p, emp_email: "" })); }}
-                  placeholder="abhay@company.com"
-                  className={`w-full h-10 rounded-lg border pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]/40 focus:border-[#217346] transition-colors ${createErrors.emp_email ? "border-red-400 bg-red-50" : "border-slate-200 bg-slate-50 hover:border-slate-300"}`}
-                />
-              </div>
-              <FieldError msg={createErrors.emp_email} />
-            </div>
-            {/* Team */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Team <span className="text-red-500">*</span></label>
-              <Select value={newEmpTeamId} onValueChange={v => { setNewEmpTeamId(v); if (createErrors.team_id) setCreateErrors(p => ({ ...p, team_id: "" })); }}>
-                <SelectTrigger className={createErrors.team_id ? "border-red-400 bg-red-50" : ""}><SelectValue placeholder="Select team..." /></SelectTrigger>
-                <SelectContent searchable>
-                  {teams.map(t => <SelectItem key={t._id} value={t._id}>{t.team_name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <FieldError msg={createErrors.team_id} />
-            </div>
-            {/* Default password hint */}
-            <div className="flex items-start gap-2.5 bg-slate-50 rounded-lg px-3 py-2.5 border border-slate-100">
-              <Lock className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
-              <p className="text-xs text-slate-500">
-                Default password: <span className="font-mono font-semibold text-slate-700">Employee ID</span> — employee logs in with their own ID as the password.
-              </p>
-            </div>
-          </div>
-          <DialogFooter className="pt-2 gap-2">
-            <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={creating} className="flex-1 sm:flex-none">Cancel</Button>
-            <Button onClick={handleCreate} disabled={creating} className="flex-1 sm:flex-none bg-[#217346] hover:bg-[#185c37] text-white gap-2 shadow-sm">
-              {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
-              {creating ? "Creating..." : "Create Employee"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* View Employee Dialog */}
       <Dialog open={!!viewTarget} onOpenChange={(v) => { if (!v) setViewTarget(null); }}>

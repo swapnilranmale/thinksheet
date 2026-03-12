@@ -3,7 +3,7 @@ import { useState, FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { authService } from "@/lib/auth";
-import { Loader2, Clock, Lock, ArrowRight, KeyRound } from "lucide-react";
+import { Loader2, Clock, Lock, ArrowRight, KeyRound, Eye, EyeOff } from "lucide-react";
 
 export default function ChangePasswordPage() {
   const { user, refreshUser } = useAuth();
@@ -14,6 +14,9 @@ export default function ChangePasswordPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   const isForced = user?.must_change_password;
 
@@ -119,13 +122,21 @@ export default function ChangePasswordPage() {
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <input
-                    type="password"
+                    type={showCurrent ? "text" : "password"}
                     value={currentPassword}
                     onChange={(e) => setCurrentPassword(e.target.value)}
                     placeholder="Your current password"
                     required
-                    className="w-full h-11 rounded-xl border border-slate-300 pl-10 pr-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#217346] focus:border-transparent transition-shadow"
+                    className="w-full h-11 rounded-xl border border-slate-300 pl-10 pr-10 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#217346] focus:border-transparent transition-shadow"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowCurrent(v => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors duration-200"
+                    tabIndex={-1}
+                  >
+                    {showCurrent ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
               </div>
             )}
@@ -135,14 +146,22 @@ export default function ChangePasswordPage() {
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input
-                  type="password"
+                  type={showNew ? "text" : "password"}
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   placeholder="Min. 6 characters"
                   required
                   autoFocus
-                  className="w-full h-11 rounded-xl border border-slate-300 pl-10 pr-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#217346] focus:border-transparent transition-shadow"
+                  className="w-full h-11 rounded-xl border border-slate-300 pl-10 pr-10 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#217346] focus:border-transparent transition-shadow"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowNew(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors duration-200"
+                  tabIndex={-1}
+                >
+                  {showNew ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
               </div>
             </div>
 
@@ -151,13 +170,21 @@ export default function ChangePasswordPage() {
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input
-                  type="password"
+                  type={showConfirm ? "text" : "password"}
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Repeat new password"
                   required
-                  className="w-full h-11 rounded-xl border border-slate-300 pl-10 pr-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#217346] focus:border-transparent transition-shadow"
+                  className="w-full h-11 rounded-xl border border-slate-300 pl-10 pr-10 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#217346] focus:border-transparent transition-shadow"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirm(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors duration-200"
+                  tabIndex={-1}
+                >
+                  {showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
               </div>
             </div>
 
