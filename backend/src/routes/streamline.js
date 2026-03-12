@@ -625,8 +625,20 @@ router.post('/sync', authenticate, checkActive, authorize(['ADMINISTRATOR']), as
                 const departmentId = deptObj?._id || (typeof r.department_id === 'string' ? r.department_id : null);
 
                 // ── Upsert Employee record ─────────────────────────────────────
+                // Use unique_id (Streamline employee ID) as primary key to prevent duplicates
+                // Fallback to email for backward compatibility if unique_id is not available
+
+                if (!empCode) {
+                    results.errors.push({
+                        resource_id: r._id,
+                        reason: 'Cannot sync: Streamline employee code (emp_id/unique_id) not found'
+                    });
+                    continue;
+                }
+
                 const empUpdate = {
                     employee_name: empName,
+                    official_email: empEmail,
                     designation,
                     team_id: teamId,
                     team_name: teamName,
@@ -634,16 +646,79 @@ router.post('/sync', authenticate, checkActive, authorize(['ADMINISTRATOR']), as
                     is_deleted: false,
                     tenant_id: tenantId,
                 };
-                if (empCode) empUpdate.unique_id = empCode;
                 if (departmentId) empUpdate.department_id = departmentId;
 
-                const empDoc = await Employee.findOneAndUpdate(
-                    { official_email: empEmail, tenant_id: tenantId },
-                    { $set: empUpdate, $setOnInsert: { official_email: empEmail, unique_id: empCode || empEmail.split('@')[0] } },
-                    { upsert: true, new: true }
-                );
+                let empDoc = null;
+                try {
+                    // Primary upsert: by unique_id + tenant_id (the Streamline employee ID)
+                    empDoc = await Employee.findOneAndUpdate(
+                        { unique_id: empCode, tenant_id: tenantId },
+                        { $set: empUpdate, $setOnInsert: { unique_id: empCode } },
+                        { upsert: true, new: true }
+                    );
 
-                results.employees_synced++;
+                    results.employees_synced++;
+                } catch (upsertErr) {
+                    // If upsert fails due to unique constraint, try fallback: check by email
+                    // This handles edge cases where unique_id conflicts with existing data
+                    if (upsertErr.code === 11000 || upsertErr.message?.includes('unique')) {
+                        console.warn(
+                            `[Streamline sync] Unique constraint violation for unique_id="${empCode}". ` +
+                            `Attempting fallback: lookup by email="${empEmail}"`
+                        );
+                        try {
+                            // Find by email first
+                            const existingByEmail = await Employee.findOne({
+                                official_email: empEmail,
+                                tenant_id: tenantId
+                            });
+
+                            if (existingByEmail) {
+                                // Employee exists by email - check if unique_id is different
+                                if (existingByEmail.unique_id !== empCode) {
+                                    console.warn(
+                                        `[Streamline sync] Employee email="${empEmail}" has existing unique_id="${existingByEmail.unique_id}", ` +
+                                        `but Streamline reports unique_id="${empCode}". Keeping existing unique_id to avoid conflicts.`
+                                    );
+                                    // Update fields except unique_id to avoid conflict
+                                    empDoc = await Employee.findByIdAndUpdate(
+                                        existingByEmail._id,
+                                        { $set: empUpdate },
+                                        { new: true }
+                                    );
+                                } else {
+                                    // unique_id matches, safe to update
+                                    empDoc = await Employee.findByIdAndUpdate(
+                                        existingByEmail._id,
+                                        { $set: empUpdate },
+                                        { new: true }
+                                    );
+                                }
+                                results.employees_synced++;
+                            } else {
+                                // No employee by email and unique_id conflict - cannot proceed safely
+                                results.errors.push({
+                                    resource_id: r._id,
+                                    reason: `Unique constraint conflict on unique_id="${empCode}" and no matching employee by email="${empEmail}". ` +
+                                           `This suggests duplicate employee codes in Streamline or data corruption.`
+                                });
+                                continue;
+                            }
+                        } catch (fallbackErr) {
+                            results.errors.push({
+                                resource_id: r._id,
+                                reason: `Failed to sync employee (${empName}/${empEmail}): ${fallbackErr.message}`
+                            });
+                            continue;
+                        }
+                    } else {
+                        // Different error - re-throw
+                        throw upsertErr;
+                    }
+                }
+
+                // If empDoc is still null, skip mapping (error was already recorded)
+                if (!empDoc) continue;
 
                 // ── Extract project ────────────────────────────────────────────
                 const projObj = (r.project_id && typeof r.project_id === 'object') ? r.project_id : null;
@@ -651,7 +726,14 @@ router.post('/sync', authenticate, checkActive, authorize(['ADMINISTRATOR']), as
                 const projectName = (projObj?.project_name || r.project_name || '').trim();
                 const projectCode = (projObj?.unique_id || projObj?.project_code || r.project_code || '').trim();
 
-                if (!projectId) continue; // Skip — can't create a mapping without a project
+                console.log(`[Streamline sync] Resource project_id extraction - raw: ${JSON.stringify(r.project_id)}, projObj: ${projObj ? 'exists' : 'null'}, projectId: ${projectId}`);
+
+                if (!projectId) {
+                    console.warn(`[Streamline sync] Skipping mapping for employee=${empDoc._id} (project_id missing from resource)`);
+                    continue;
+                }
+
+                console.log(`[Streamline sync] Creating mapping: employee=${empDoc._id} project=${projectId} tenant=${tenantId}`);
 
                 // ── Extract client ─────────────────────────────────────────────
                 const clientObj = (r.client_id && typeof r.client_id === 'object')
@@ -709,7 +791,13 @@ router.post('/sync', authenticate, checkActive, authorize(['ADMINISTRATOR']), as
 
                 results.mappings_synced++;
             } catch (rowErr) {
-                results.errors.push({ resource_id: r._id, reason: rowErr.message });
+                console.error(`[Streamline sync] Error processing resource=${r._id}:`, rowErr.message, rowErr.stack);
+                results.errors.push({
+                    resource_id: r._id,
+                    reason: rowErr.message,
+                    error_code: rowErr.code,
+                    error_name: rowErr.name
+                });
             }
         }
 
