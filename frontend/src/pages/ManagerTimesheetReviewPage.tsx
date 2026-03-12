@@ -251,27 +251,32 @@ export default function ManagerTimesheetReviewPage() {
               <p className="text-sm">Sync to populate project data</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-3">
-              {clients.map((client) => (
-                <button
-                  key={client.client_id}
-                  onClick={() => goToProjects(client)}
-                  className="flex items-center gap-4 p-4 bg-white border border-slate-200 rounded-xl hover:border-[#217346] hover:shadow-sm transition-all text-left group"
-                >
-                  <div className="w-11 h-11 rounded-xl bg-blue-100 flex items-center justify-center shrink-0">
-                    <Building2 className="w-5 h-5 text-blue-600" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-slate-900 group-hover:text-[#217346] transition-colors">
-                      {client.client_name}
-                    </p>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      {client.projects.length} project{client.projects.length !== 1 ? "s" : ""} · {client.projects.reduce((s, p) => s + p.resource_count, 0)} resources
-                    </p>
-                  </div>
-                  <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-[#217346] transition-colors shrink-0" />
-                </button>
-              ))}
+            <div className="flex flex-col flex-1 min-h-0">
+              <div className="overflow-y-auto flex-1 flex flex-col gap-2">
+                {clients.map((client) => (
+                  <button
+                    key={client.client_id}
+                    onClick={() => goToProjects(client)}
+                    className="w-full bg-white border border-slate-200 rounded-xl px-5 py-4 flex items-center gap-4 hover:border-[#217346]/30 hover:shadow-sm transition-all text-left group"
+                  >
+                    <div className="w-11 h-11 rounded-full bg-blue-50 flex items-center justify-center shrink-0 ring-2 ring-blue-100">
+                      <Building2 className="w-5 h-5 text-blue-500" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-slate-900 group-hover:text-[#217346] transition-colors">{client.client_name}</p>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {client.projects.length} project{client.projects.length !== 1 ? "s" : ""} · {client.projects.reduce((s, p) => s + p.resource_count, 0)} resources
+                      </p>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-[#217346] transition-colors shrink-0" />
+                  </button>
+                ))}
+              </div>
+              <div className="shrink-0 pt-2 px-1">
+                <span className="text-xs text-slate-400">
+                  Showing <strong>{clients.length}</strong> client{clients.length !== 1 ? "s" : ""} · Page <strong>1</strong> of <strong>1</strong>
+                </span>
+              </div>
             </div>
           )}
         </div>
@@ -296,37 +301,40 @@ export default function ManagerTimesheetReviewPage() {
             <MonthYearPicker />
           </div>
 
-          <div className="grid grid-cols-1 gap-3">
-            {selectedClient.projects.map((project) => (
-              <button
-                key={project.project_id}
-                onClick={() => goToResources(project)}
-                className="flex items-center gap-4 p-4 bg-white border border-slate-200 rounded-xl hover:border-[#217346] hover:shadow-sm transition-all text-left group"
-              >
-                <div className="w-11 h-11 rounded-xl bg-[#217346]/10 flex items-center justify-center shrink-0">
-                  <FolderOpen className="w-5 h-5 text-[#217346]" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-slate-900 group-hover:text-[#217346] transition-colors">
-                    {project.project_name}
-                  </p>
-                  <div className="flex items-center gap-3 mt-0.5 text-xs text-slate-400">
-                    <span className="flex items-center gap-1"><Users className="w-3 h-3" />{project.resource_count} resource{project.resource_count !== 1 ? "s" : ""}</span>
-                    {project.start_date && (
-                      <span className="flex items-center gap-1">
-                        <Calendar className="w-3 h-3" />
-                        {new Date(project.start_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
-                        {" – "}
-                        {project.end_date
-                          ? new Date(project.end_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
-                          : "ongoing"}
-                      </span>
-                    )}
+          <div className="flex flex-col flex-1 min-h-0">
+            <div className="overflow-y-auto flex-1 flex flex-col gap-2">
+              {selectedClient.projects.map((project) => (
+                <button
+                  key={project.project_id}
+                  onClick={() => goToResources(project)}
+                  className="w-full bg-white border border-slate-200 rounded-xl px-5 py-4 flex items-center gap-4 hover:border-[#217346]/30 hover:shadow-sm transition-all text-left group"
+                >
+                  <div className="w-11 h-11 rounded-full bg-gradient-to-br from-[#217346]/20 to-[#217346]/10 flex items-center justify-center shrink-0 ring-2 ring-[#217346]/10">
+                    <FolderOpen className="w-5 h-5 text-[#217346]" />
                   </div>
-                </div>
-                <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-[#217346] transition-colors shrink-0" />
-              </button>
-            ))}
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-slate-900 group-hover:text-[#217346] transition-colors">{project.project_name}</p>
+                    <div className="flex items-center gap-3 mt-0.5 text-xs text-slate-400">
+                      <span className="flex items-center gap-1"><Users className="w-3 h-3" />{project.resource_count} resource{project.resource_count !== 1 ? "s" : ""}</span>
+                      {project.start_date && (
+                        <span className="flex items-center gap-1">
+                          <Calendar className="w-3 h-3" />
+                          {new Date(project.start_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                          {" – "}
+                          {project.end_date ? new Date(project.end_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "ongoing"}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-[#217346] transition-colors shrink-0" />
+                </button>
+              ))}
+            </div>
+            <div className="shrink-0 pt-2 px-1">
+              <span className="text-xs text-slate-400">
+                Showing <strong>{selectedClient.projects.length}</strong> project{selectedClient.projects.length !== 1 ? "s" : ""} · Page <strong>1</strong> of <strong>1</strong>
+              </span>
+            </div>
           </div>
         </div>
       </DashboardLayout>
@@ -387,61 +395,62 @@ export default function ManagerTimesheetReviewPage() {
               <p className="text-sm">No employees mapped to this project</p>
             </div>
           ) : (
-            <div className="bg-white border rounded-xl overflow-hidden">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-[#217346] text-white text-xs">
-                    <th className="px-4 py-3 text-left font-semibold w-8">#</th>
-                    <th className="px-4 py-3 text-left font-semibold">Employee</th>
-                    <th className="px-4 py-3 text-center font-semibold">Entries</th>
-                    <th className="px-4 py-3 text-center font-semibold">Hours Logged</th>
-                    <th className="px-4 py-3 text-left font-semibold">Last Submitted</th>
-                    <th className="px-4 py-3 text-left font-semibold">Status</th>
-                    <th className="px-4 py-3 text-right font-semibold w-24">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {projectMembers.map((member, idx) => (
-                    <tr key={member.employee_id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-4 py-3 text-slate-400 text-xs font-mono">{idx + 1}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2.5">
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${avatarColor(member.employee_name)}`}>
-                            {getInitials(member.employee_name)}
-                          </div>
-                          <div>
-                            <p className="font-medium text-slate-900">{member.employee_name}</p>
-                            <p className="text-xs text-slate-400">{member.unique_id} · {member.designation}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        {member.entries_count > 0 ? <span className="font-medium">{member.entries_count}</span> : <span className="text-slate-300">—</span>}
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        {member.total_worked > 0 ? <span className="font-medium">{member.total_worked}h</span> : <span className="text-slate-300">—</span>}
-                      </td>
-                      <td className="px-4 py-3 text-xs text-slate-500">
-                        {member.submitted_at
-                          ? new Date(member.submitted_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
-                          : <span className="text-slate-300">Never</span>}
-                      </td>
-                      <td className="px-4 py-3"><StatusBadge status={member.status} /></td>
-                      <td className="px-4 py-3 text-right">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="gap-1.5 h-7 text-xs"
-                          disabled={member.status === "not_started"}
-                          onClick={() => openTimesheet(member)}
-                        >
-                          <Eye className="w-3 h-3" />View
-                        </Button>
-                      </td>
+            <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col">
+              <div className="overflow-auto flex-1">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-[#217346] text-white text-xs">
+                      <th className="px-4 py-3 text-left font-semibold w-8">#</th>
+                      <th className="px-4 py-3 text-left font-semibold">Employee</th>
+                      <th className="px-4 py-3 text-center font-semibold">Entries</th>
+                      <th className="px-4 py-3 text-center font-semibold">Hours Logged</th>
+                      <th className="px-4 py-3 text-left font-semibold">Last Submitted</th>
+                      <th className="px-4 py-3 text-left font-semibold">Status</th>
+                      <th className="px-4 py-3 text-right font-semibold w-24">Action</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {projectMembers.map((member, idx) => (
+                      <tr key={member.employee_id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-4 py-3 text-slate-400 text-xs font-mono">{idx + 1}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2.5">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${avatarColor(member.employee_name)}`}>
+                              {getInitials(member.employee_name)}
+                            </div>
+                            <div>
+                              <p className="font-medium text-slate-900">{member.employee_name}</p>
+                              <p className="text-xs text-slate-400">{member.unique_id} · {member.designation}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          {member.entries_count > 0 ? <span className="font-medium">{member.entries_count}</span> : <span className="text-slate-300">—</span>}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          {member.total_worked > 0 ? <span className="font-medium">{member.total_worked}h</span> : <span className="text-slate-300">—</span>}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-slate-500">
+                          {member.submitted_at
+                            ? new Date(member.submitted_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+                            : <span className="text-slate-300">Never</span>}
+                        </td>
+                        <td className="px-4 py-3"><StatusBadge status={member.status} /></td>
+                        <td className="px-4 py-3 text-right">
+                          <Button variant="outline" size="sm" className="gap-1.5 h-7 text-xs" disabled={member.status === "not_started"} onClick={() => openTimesheet(member)}>
+                            <Eye className="w-3 h-3" />View
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="shrink-0 border-t border-slate-100 px-5 py-3 flex items-center justify-between bg-white">
+                <span className="text-xs text-slate-400">
+                  Showing <strong>{projectMembers.length}</strong> resource{projectMembers.length !== 1 ? "s" : ""} · Page <strong>1</strong> of <strong>1</strong>
+                </span>
+              </div>
             </div>
           )}
         </div>

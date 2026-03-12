@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { getErrorMessage } from "@/lib/api";
 import {
   Select,
@@ -34,7 +33,6 @@ import {
   X,
   Mail,
   KeyRound,
-  Briefcase,
   FolderOpen,
   Building2,
   CalendarRange,
@@ -107,9 +105,9 @@ function ProjectsTab({ onProjectClick }: { onProjectClick: (proj: ResourceMaster
   }
 
   return (
-    <div>
+    <div className="flex flex-col flex-1 min-h-0">
       {/* Toolbar */}
-      <div className="flex items-center gap-3 mb-6">
+      <div className="flex items-center gap-3 mb-4 shrink-0">
         <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
           <input
@@ -132,57 +130,45 @@ function ProjectsTab({ onProjectClick }: { onProjectClick: (proj: ResourceMaster
           <p className="text-sm mt-1">Try a different search term</p>
         </div>
       ) : (
-      <div className="space-y-3.5">
-        {filtered.map((proj, index) => (
-          <div
-            key={proj.project_id}
-            className="bg-white border border-slate-200 rounded-xl overflow-hidden hover:border-[#217346]/30 hover:shadow-lg hover:shadow-[#217346]/10 transition-all duration-300 group animate-slide-up"
-            style={{ animationDelay: `${index * 0.05}s` }}
-          >
-            <div
-              className="px-6 py-5 flex items-center gap-4 cursor-pointer transition-all duration-300"
-              onClick={() => onProjectClick(proj)}
-            >
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#217346]/20 to-emerald-300/10 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform duration-300 border border-[#217346]/10">
-                <FolderOpen className="w-5 h-5 text-[#217346]" />
-              </div>
-
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <p className="font-semibold text-slate-900">{proj.project_name || "Unnamed Project"}</p>
-                  {proj.project_code && (
-                    <Badge variant="outline" className="text-xs border-slate-200 bg-slate-50 text-slate-500 font-mono">
-                      {proj.project_code}
-                    </Badge>
-                  )}
+        <div className="flex flex-col flex-1 min-h-0">
+          <div className="overflow-y-auto flex-1 flex flex-col gap-2">
+            {filtered.map((proj) => (
+              <button
+                key={proj.project_id}
+                onClick={() => onProjectClick(proj)}
+                className="w-full bg-white border border-slate-200 rounded-xl px-5 py-3 flex items-center gap-3 hover:border-[#217346]/30 hover:shadow-sm transition-all text-left group"
+              >
+                <div className="w-8 h-8 rounded-lg bg-[#217346]/10 flex items-center justify-center shrink-0">
+                  <FolderOpen className="w-4 h-4 text-[#217346]" />
                 </div>
-                <div className="flex items-center gap-4 mt-0.5 flex-wrap">
-                  {proj.client_name && (
-                    <span className="text-xs text-slate-500 flex items-center gap-1">
-                      <Building2 className="w-3 h-3" />
-                      {proj.client_name}
-                    </span>
-                  )}
-                  {(proj.start_date || proj.end_date) && (
-                    <span className="text-xs text-slate-500 flex items-center gap-1">
-                      <CalendarRange className="w-3 h-3" />
-                      {formatDate(proj.start_date)} – {formatDate(proj.end_date)}
-                    </span>
-                  )}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-semibold text-slate-900 group-hover:text-[#217346] transition-colors">{proj.project_name || "Unnamed Project"}</p>
+                    {proj.project_code && (
+                      <span className="text-xs font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{proj.project_code}</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                    {proj.client_name && <span className="flex items-center gap-1 text-xs text-slate-500"><Building2 className="w-3 h-3" />{proj.client_name}</span>}
+                    {(proj.start_date || proj.end_date) && (
+                      <span className="flex items-center gap-1 text-xs text-slate-400"><CalendarRange className="w-3 h-3" />{formatDate(proj.start_date)} – {formatDate(proj.end_date)}</span>
+                    )}
+                  </div>
                 </div>
-              </div>
-
-              <div className="flex items-center gap-3 shrink-0">
-                <Badge variant="outline" className="text-xs border-[#217346]/30 bg-[#217346]/5 text-[#217346]">
-                  <Users className="w-3 h-3 mr-1" />
+                <span className="text-xs text-[#217346] bg-[#217346]/8 px-2.5 py-1 rounded-full shrink-0 flex items-center gap-1">
+                  <Users className="w-3 h-3" />
                   {proj.resource_count} resource{proj.resource_count !== 1 ? "s" : ""}
-                </Badge>
-                <ChevronRight className="w-4 h-4 text-slate-400" />
-              </div>
-            </div>
+                </span>
+                <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-[#217346] transition-colors shrink-0" />
+              </button>
+            ))}
           </div>
-        ))}
-      </div>
+          <div className="shrink-0 pt-2 px-1">
+            <span className="text-xs text-slate-400">
+              Showing <strong>{filtered.length}</strong> project{filtered.length !== 1 ? "s" : ""} · Page <strong>1</strong> of <strong>1</strong>
+            </span>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -350,7 +336,7 @@ export default function EmployeeManagementPage() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-6xl mx-auto">
+      <div className="w-full h-full flex flex-col">
         {/* Header */}
         <div className="mb-8 animate-slide-up">
           <h1 className="text-3xl font-bold tracking-tight text-slate-900 animate-text-fade">
@@ -434,88 +420,50 @@ export default function EmployeeManagementPage() {
                 </p>
               </div>
             ) : (
-              <div className="space-y-3">
-                {filtered.map((emp, index) => (
-                  <div
-                    key={emp._id}
-                    className="bg-white border border-slate-200 rounded-xl px-6 py-4 flex items-center gap-4 hover:border-[#217346]/30 hover:shadow-lg hover:shadow-[#217346]/10 transition-all duration-300 group animate-slide-up"
-                    style={{ animationDelay: `${index * 0.05}s` }}
-                  >
-                    {/* Avatar with animation */}
-                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#217346]/20 to-emerald-300/10 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform duration-300 border border-[#217346]/10">
-                      <span className="text-sm font-bold text-[#217346]">{getInitials(emp.employee_name)}</span>
-                    </div>
-
-                    {/* Info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="font-semibold text-slate-900">{emp.employee_name}</p>
-                        {emp.designation && (
-                          <span className="text-xs text-slate-500 flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-full">
-                            <Briefcase className="w-3 h-3" />
-                            {emp.designation}
-                          </span>
-                        )}
+              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col">
+                <div className="divide-y divide-slate-100">
+                  {filtered.map((emp) => (
+                    <div
+                      key={emp._id}
+                      className="flex items-center gap-4 px-5 py-4 hover:bg-slate-50/80 transition-colors group"
+                    >
+                      <div className="w-9 h-9 rounded-full bg-[#217346]/10 flex items-center justify-center shrink-0">
+                        <span className="text-sm font-bold text-[#217346]">{getInitials(emp.employee_name)}</span>
                       </div>
-                      <div className="flex items-center gap-4 mt-1.5 flex-wrap">
-                        <span className="text-xs text-slate-600 flex items-center gap-1.5">
-                          <Mail className="w-3 h-3 text-[#217346]/60" />
-                          {emp.official_email}
-                        </span>
-                        <span className="text-xs text-slate-500 font-mono bg-slate-50 px-2 py-1 rounded">ID: {emp.unique_id}</span>
-                        {emp.resource_id && (
-                          <span className="text-xs text-slate-500 font-mono bg-slate-50 px-2 py-1 rounded">
-                            Resource: {emp.resource_id}
-                          </span>
-                        )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-semibold text-slate-900">{emp.employee_name}</p>
+                          {emp.designation && (
+                            <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded">{emp.designation}</span>
+                          )}
+                          {emp.team_name && (
+                            <span className="text-xs text-[#217346] bg-[#217346]/8 px-2 py-0.5 rounded">{emp.team_name}</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3 mt-0.5 text-xs text-slate-400 flex-wrap">
+                          <span className="flex items-center gap-1"><Mail className="w-3 h-3" />{emp.official_email}</span>
+                          <span className="font-mono">ID: {emp.unique_id}</span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-3 mt-1.5 flex-wrap">
-                        {emp.actual_resource && (
-                          <span className="text-xs text-slate-500 flex items-center gap-1">
-                            <UserCog className="w-3 h-3" />
-                            Actual: {emp.actual_resource}
-                          </span>
-                        )}
-                        {emp.profile_resource && (
-                          <span className="text-xs text-slate-400 flex items-center gap-1">
-                            <UserCog className="w-3 h-3" />
-                            Profile: {emp.profile_resource}
-                          </span>
-                        )}
+                      <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => openEditDialog(emp)} className="p-2 rounded-lg hover:bg-[#217346]/10 text-slate-400 hover:text-[#217346] transition-colors" title="Edit">
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => setResetTarget(emp)} className="p-2 rounded-lg hover:bg-orange-50 text-slate-400 hover:text-orange-600 transition-colors" title="Reset password">
+                          <KeyRound className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => setDeleteTarget(emp)} className="p-2 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors" title="Delete">
+                          <X className="w-4 h-4" />
+                        </button>
                       </div>
-                      {emp.team_name && (
-                        <Badge variant="outline" className="mt-2 text-xs border-[#217346]/20 bg-[#217346]/5 text-[#217346] font-medium">
-                          {emp.team_name}
-                        </Badge>
-                      )}
                     </div>
-
-                    {/* Actions with animation */}
-                    <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                      <button
-                        onClick={() => openEditDialog(emp)}
-                        className="p-2.5 rounded-lg hover:bg-[#217346]/10 text-slate-400 hover:text-[#217346] transition-all duration-300 hover:scale-110"
-                        title="Edit employee"
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => setResetTarget(emp)}
-                        className="p-2.5 rounded-lg hover:bg-orange-500/10 text-slate-400 hover:text-orange-600 transition-all duration-300 hover:scale-110"
-                        title="Reset password"
-                      >
-                        <KeyRound className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => setDeleteTarget(emp)}
-                        className="p-2.5 rounded-lg hover:bg-red-500/10 text-slate-400 hover:text-red-500 transition-all duration-300 hover:scale-110"
-                        title="Delete employee"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
+                <div className="shrink-0 border-t border-slate-100 px-5 py-3 flex items-center justify-between bg-white">
+                  <span className="text-xs text-slate-400">
+                    Showing <strong>{filtered.length}</strong> employee{filtered.length !== 1 ? "s" : ""} · Page <strong>1</strong> of <strong>1</strong>
+                  </span>
+                </div>
               </div>
             )}
           </>

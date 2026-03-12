@@ -357,7 +357,7 @@ function ManagersTab() {
         streamlineService.getEngineeringTeams(),
       ]);
       setManagers(res.data.data);
-      setPagination(res.data.pagination);
+      setPagination(res.data.pagination ?? { total: res.data.data?.length ?? 0, page: 1, limit: PAGE_SIZE, pages: 1 });
       setTeams(teamsData);
     } catch (err) {
       toast.error(getErrorMessage(err, "Failed to load managers"));
@@ -445,9 +445,9 @@ function ManagersTab() {
   }
 
   return (
-    <div>
+    <div className="flex flex-col h-full">
       {/* Toolbar */}
-      <div className="flex items-center justify-between mb-5 gap-3 flex-wrap">
+      <div className="flex items-center justify-between mb-5 gap-3 flex-wrap shrink-0">
         <div className="flex items-center gap-3 flex-1 min-w-0">
           {/* Search */}
           <div className="relative min-w-[220px] max-w-xs">
@@ -489,7 +489,8 @@ function ManagersTab() {
           <p className="text-sm mt-1 text-slate-400">{searchQuery ? "Try a different search term" : "Click \"Add Manager\" to create the first manager account"}</p>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col h-full">
+          <div className="overflow-y-auto flex-1 p-3 space-y-3">
           {managers.map((mgr) => {
             const teamNames = getTeamNames(mgr.team_ids);
             const isActive = mgr.is_active !== false;
@@ -573,56 +574,56 @@ function ManagersTab() {
               </div>
             );
           })}
-        </div>
-      )}
-
-      {/* Pagination */}
-      {pagination.pages > 1 && (
-        <div className="flex items-center justify-between mt-5 pt-4 border-t border-slate-100">
-          <span className="text-xs text-slate-400">
-            Page <strong>{page}</strong> of <strong>{pagination.pages}</strong> · {pagination.total} managers
-          </span>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => goToPage(page - 1)}
-              disabled={page <= 1 || loading}
-              className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            {Array.from({ length: pagination.pages }, (_, i) => i + 1)
-              .filter(p => p === 1 || p === pagination.pages || Math.abs(p - page) <= 1)
-              .reduce<(number | "…")[]>((acc, p, idx, arr) => {
-                if (idx > 0 && (p as number) - (arr[idx - 1] as number) > 1) acc.push("…");
-                acc.push(p);
-                return acc;
-              }, [])
-              .map((p, i) =>
-                p === "…" ? (
-                  <span key={`ellipsis-${i}`} className="px-1.5 text-slate-400 text-xs">…</span>
-                ) : (
-                  <button
-                    key={p}
-                    onClick={() => goToPage(p as number)}
-                    disabled={loading}
-                    className={`min-w-[30px] h-[30px] rounded-lg text-xs font-medium transition-colors ${
-                      page === p
-                        ? "bg-[#217346] text-white shadow-sm"
-                        : "border border-slate-200 text-slate-600 hover:bg-slate-50"
-                    }`}
-                  >
-                    {p}
-                  </button>
-                )
-              )}
-            <button
-              onClick={() => goToPage(page + 1)}
-              disabled={page >= pagination.pages || loading}
-              className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
           </div>
+          {/* Pagination — inside card, outside scroll */}
+          {pagination.total > 0 && (
+            <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 bg-white shrink-0">
+              <span className="text-xs text-slate-400">
+                Showing <strong>{pagination.total}</strong> manager{pagination.total !== 1 ? "s" : ""} · Page <strong>{page}</strong> of <strong>{pagination.pages}</strong>
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => goToPage(page - 1)}
+                  disabled={page <= 1 || loading}
+                  className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                {Array.from({ length: pagination.pages }, (_, i) => i + 1)
+                  .filter(p => p === 1 || p === pagination.pages || Math.abs(p - page) <= 1)
+                  .reduce<(number | "…")[]>((acc, p, idx, arr) => {
+                    if (idx > 0 && (p as number) - (arr[idx - 1] as number) > 1) acc.push("…");
+                    acc.push(p);
+                    return acc;
+                  }, [])
+                  .map((p, i) =>
+                    p === "…" ? (
+                      <span key={`ellipsis-${i}`} className="px-1.5 text-slate-400 text-xs">…</span>
+                    ) : (
+                      <button
+                        key={p}
+                        onClick={() => goToPage(p as number)}
+                        disabled={loading}
+                        className={`min-w-[30px] h-[30px] rounded-lg text-xs font-medium transition-colors ${
+                          page === p
+                            ? "bg-[#217346] text-white shadow-sm"
+                            : "border border-slate-200 text-slate-600 hover:bg-slate-50"
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    )
+                  )}
+                <button
+                  onClick={() => goToPage(page + 1)}
+                  disabled={page >= pagination.pages || loading}
+                  className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -819,7 +820,7 @@ function EmployeesTab() {
         streamlineService.getEngineeringTeams(),
       ]);
       setEmployees(empRes.data);
-      setPagination(empRes.pagination);
+      setPagination(empRes.pagination ?? { total: empRes.data?.length ?? 0, page: 1, limit: PAGE_SIZE, pages: 1 });
       setTeams(teamsData);
     } catch (err) {
       toast.error(getErrorMessage(err, "Failed to load employees"));
@@ -915,9 +916,9 @@ function EmployeesTab() {
   }
 
   return (
-    <div>
+    <div className="flex flex-col h-full">
       {/* ── Toolbar ── */}
-      <div className="flex items-center justify-between mb-5 gap-3 flex-wrap">
+      <div className="flex items-center justify-between mb-5 gap-3 flex-wrap shrink-0">
         <div className="flex items-center gap-3 flex-1 min-w-0 flex-wrap">
           {/* Search */}
           <div className="relative min-w-[220px] max-w-sm flex-1">
@@ -968,6 +969,7 @@ function EmployeesTab() {
         </div>
       </div>
 
+      <div className="flex-1 min-h-0">
       {loading ? (
         <div className="flex flex-col items-center justify-center py-20 text-slate-400 gap-3">
           <Loader2 className="w-7 h-7 animate-spin text-[#217346]" />
@@ -982,10 +984,10 @@ function EmployeesTab() {
       ) : (
         <>
           {/* Desktop table (md+) */}
-          <div className="hidden md:block bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-            <div className="overflow-x-auto">
+          <div className="hidden md:flex md:flex-col bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm h-full">
+            <div className="overflow-auto flex-1">
               <table className="w-full text-sm">
-                <thead className="bg-slate-50 border-b border-slate-100">
+                <thead className="bg-slate-50 border-b border-slate-100 sticky top-0 z-10">
                   <tr>
                     <th className="text-left px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Employee</th>
                     <th className="text-left px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Emp ID</th>
@@ -1070,6 +1072,55 @@ function EmployeesTab() {
                 </tbody>
               </table>
             </div>
+            {/* Pagination — inside card, outside scroll */}
+            {pagination.total > 0 && (
+              <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 bg-white shrink-0">
+                <span className="text-xs text-slate-400">
+                  Showing <strong>{pagination.total}</strong> employee{pagination.total !== 1 ? "s" : ""} · Page <strong>{page}</strong> of <strong>{pagination.pages}</strong>
+                </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => goToPage(page - 1)}
+                    disabled={page <= 1 || loading}
+                    className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  {Array.from({ length: pagination.pages }, (_, i) => i + 1)
+                    .filter(p => p === 1 || p === pagination.pages || Math.abs(p - page) <= 1)
+                    .reduce<(number | "…")[]>((acc, p, idx, arr) => {
+                      if (idx > 0 && (p as number) - (arr[idx - 1] as number) > 1) acc.push("…");
+                      acc.push(p);
+                      return acc;
+                    }, [])
+                    .map((p, i) =>
+                      p === "…" ? (
+                        <span key={`ellipsis-${i}`} className="px-1.5 text-slate-400 text-xs">…</span>
+                      ) : (
+                        <button
+                          key={p}
+                          onClick={() => goToPage(p as number)}
+                          disabled={loading}
+                          className={`min-w-[30px] h-[30px] rounded-lg text-xs font-medium transition-colors ${
+                            page === p
+                              ? "bg-[#217346] text-white shadow-sm"
+                              : "border border-slate-200 text-slate-600 hover:bg-slate-50"
+                          }`}
+                        >
+                          {p}
+                        </button>
+                      )
+                    )}
+                  <button
+                    onClick={() => goToPage(page + 1)}
+                    disabled={page >= pagination.pages || loading}
+                    className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Mobile card list (< md) */}
@@ -1123,56 +1174,7 @@ function EmployeesTab() {
           </div>
         </>
       )}
-
-      {/* Pagination */}
-      {pagination.pages > 1 && (
-        <div className="flex items-center justify-between mt-5 pt-4 border-t border-slate-100">
-          <span className="text-xs text-slate-400">
-            Page <strong>{page}</strong> of <strong>{pagination.pages}</strong> · {pagination.total} employees
-          </span>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => goToPage(page - 1)}
-              disabled={page <= 1 || loading}
-              className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            {Array.from({ length: pagination.pages }, (_, i) => i + 1)
-              .filter(p => p === 1 || p === pagination.pages || Math.abs(p - page) <= 1)
-              .reduce<(number | "…")[]>((acc, p, idx, arr) => {
-                if (idx > 0 && (p as number) - (arr[idx - 1] as number) > 1) acc.push("…");
-                acc.push(p);
-                return acc;
-              }, [])
-              .map((p, i) =>
-                p === "…" ? (
-                  <span key={`ellipsis-${i}`} className="px-1.5 text-slate-400 text-xs">…</span>
-                ) : (
-                  <button
-                    key={p}
-                    onClick={() => goToPage(p as number)}
-                    disabled={loading}
-                    className={`min-w-[30px] h-[30px] rounded-lg text-xs font-medium transition-colors ${
-                      page === p
-                        ? "bg-[#217346] text-white shadow-sm"
-                        : "border border-slate-200 text-slate-600 hover:bg-slate-50"
-                    }`}
-                  >
-                    {p}
-                  </button>
-                )
-              )}
-            <button
-              onClick={() => goToPage(page + 1)}
-              disabled={page >= pagination.pages || loading}
-              className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
+      </div>
 
       {/* View Employee Dialog */}
       <Dialog open={!!viewTarget} onOpenChange={(v) => { if (!v) setViewTarget(null); }}>
@@ -1465,9 +1467,9 @@ function LogsTab() {
   }
 
   return (
-    <div>
+    <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex items-center justify-between mb-5 shrink-0">
         <p className="text-sm text-slate-500">
           {pagination.total} log{pagination.total !== 1 ? "s" : ""}
         </p>
@@ -1485,12 +1487,12 @@ function LogsTab() {
           <p className="text-sm mt-1">Actions like creating managers and employees will appear here</p>
         </div>
       ) : (
-        <>
+        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col h-full">
           {/* ── Desktop table (md+) ── */}
-          <div className="hidden md:block bg-white border border-slate-200 rounded-xl overflow-hidden">
-            <div className="overflow-x-auto">
+          <div className="hidden md:flex md:flex-col flex-1 overflow-hidden">
+            <div className="overflow-auto flex-1">
               <table className="w-full text-sm">
-                <thead className="bg-slate-50 border-b border-slate-200">
+                <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
                   <tr>
                     <th className="text-left px-5 py-3 font-medium text-slate-500 whitespace-nowrap">Action</th>
                     <th className="text-left px-5 py-3 font-medium text-slate-500">Target</th>
@@ -1531,78 +1533,50 @@ function LogsTab() {
                 </tbody>
               </table>
             </div>
+            {/* Pagination — pinned at bottom */}
+            {pagination.total > 0 && (
+              <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 bg-white shrink-0">
+                <span className="text-xs text-slate-400">
+                  Showing <strong>{pagination.total}</strong> log{pagination.total !== 1 ? "s" : ""} · Page <strong>{page}</strong> of <strong>{pagination.pages}</strong>
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)} className="gap-1 h-8">
+                    <ChevronLeft className="w-4 h-4" />Previous
+                  </Button>
+                  <Button variant="outline" size="sm" disabled={page >= pagination.pages} onClick={() => setPage((p) => p + 1)} className="gap-1 h-8">
+                    Next<ChevronRight className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* ── Mobile card list (< md) ── */}
-          <div className="md:hidden space-y-2.5">
+          <div className="md:hidden overflow-y-auto flex-1 p-3 space-y-2.5">
             {logs.map((log) => (
               <div
                 key={log._id}
                 className="bg-white border border-slate-200 rounded-xl px-4 py-3.5 space-y-2"
               >
-                {/* Top row: badge + date */}
                 <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <Badge
-                    variant="outline"
-                    className={`text-xs font-medium ${ACTION_COLORS[log.action] || "border-slate-200 bg-slate-50 text-slate-600"}`}
-                  >
+                  <Badge variant="outline" className={`text-xs font-medium ${ACTION_COLORS[log.action] || "border-slate-200 bg-slate-50 text-slate-600"}`}>
                     {ACTION_LABELS[log.action] || log.action}
                   </Badge>
                   <span className="text-xs text-slate-400">{formatDate(log.createdAt)}</span>
                 </div>
-
-                {/* Target */}
                 <div>
                   <p className="font-semibold text-slate-900 text-sm">{log.target_name}</p>
-                  {log.target_email && (
-                    <p className="text-xs text-slate-400">{log.target_email}</p>
-                  )}
+                  {log.target_email && <p className="text-xs text-slate-400">{log.target_email}</p>}
                 </div>
-
-                {/* Details */}
-                {log.details && (
-                  <p className="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-1.5">{log.details}</p>
-                )}
-
-                {/* Performed by */}
+                {log.details && <p className="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-1.5">{log.details}</p>}
                 <p className="text-xs text-slate-400">
-                  By <span className="font-medium text-slate-600">{log.performed_by_name}</span>
-                  {" "}·{" "}
+                  By <span className="font-medium text-slate-600">{log.performed_by_name}</span>{" "}·{" "}
                   <span className="capitalize">{log.performed_by_role?.toLowerCase()}</span>
                 </p>
               </div>
             ))}
           </div>
-
-          {/* Pagination */}
-          {pagination.pages > 1 && (
-            <div className="flex items-center justify-center gap-3 mt-4">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page <= 1}
-                onClick={() => setPage((p) => p - 1)}
-                className="gap-1"
-              >
-                <ChevronLeft className="w-4 h-4" />
-                Previous
-              </Button>
-              <span className="text-sm text-slate-500">
-                Page {page} of {pagination.pages}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page >= pagination.pages}
-                onClick={() => setPage((p) => p + 1)}
-                className="gap-1"
-              >
-                Next
-                <ChevronRight className="w-4 h-4" />
-              </Button>
-            </div>
-          )}
-        </>
+        </div>
       )}
     </div>
   );
@@ -1900,43 +1874,44 @@ function ProjectsTab() {
     return (
       <>
         {ExportDialog}
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold text-slate-900">Clients</h2>
-            <div className="flex items-center gap-2">
-              <p className="text-sm text-slate-400">
-                {clientGroups.length} client{clientGroups.length !== 1 ? "s" : ""} · {clientGroups.reduce((s, c) => s + c.projects.length, 0)} projects
-              </p>
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-1.5 border-[#217346] text-[#217346] hover:bg-[#217346]/5"
-                onClick={() => openExport(allProjects, "All Clients – All Projects")}
-              >
-                <Download className="w-3.5 h-3.5" />
-                Export All
-              </Button>
+        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col h-full">
+          {/* Toolbar */}
+          <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 shrink-0 gap-3 flex-wrap">
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <div className="relative min-w-[220px] max-w-sm flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder="Search clients..."
+                  value={clientSearch}
+                  onChange={e => setClientSearch(e.target.value)}
+                  className="w-full h-9 pl-9 pr-4 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]/40 focus:border-[#217346] transition-colors"
+                />
+              </div>
+              <span className="text-sm text-slate-500 whitespace-nowrap">
+                <strong className="text-slate-700">{clientGroups.length}</strong> client{clientGroups.length !== 1 ? "s" : ""} · <strong className="text-slate-700">{clientGroups.reduce((s, c) => s + c.projects.length, 0)}</strong> projects
+              </span>
             </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5 border-[#217346] text-[#217346] hover:bg-[#217346]/5 shrink-0"
+              onClick={() => openExport(allProjects, "All Clients – All Projects")}
+            >
+              <Download className="w-3.5 h-3.5" />
+              Export All
+            </Button>
           </div>
-          <div className="relative mb-4">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search clients..."
-              value={clientSearch}
-              onChange={e => setClientSearch(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#217346]/30 focus:border-[#217346]"
-            />
-          </div>
-          <div className="space-y-3">
+          {/* List */}
+          <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
             {filteredClients.map(cg => (
               <button
                 key={cg.client_id}
                 onClick={() => { setSelectedClient(cg); setProjectView("projects"); setProjectSearch(""); }}
-                className="w-full flex items-center gap-4 p-4 bg-white border border-slate-200 rounded-xl hover:border-[#217346] hover:shadow-sm transition-all text-left group"
+                className="w-full flex items-center gap-4 px-5 py-4 hover:bg-slate-50/80 transition-colors text-left group"
               >
-                <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center shrink-0">
-                  <Building2 className="w-5 h-5 text-blue-600" />
+                <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
+                  <Building2 className="w-4.5 h-4.5 text-blue-500" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-slate-900 group-hover:text-[#217346] transition-colors">{cg.client_name}</p>
@@ -1944,13 +1919,23 @@ function ProjectsTab() {
                     {cg.projects.length} project{cg.projects.length !== 1 ? "s" : ""} · {cg.total_resources} resource{cg.total_resources !== 1 ? "s" : ""}
                   </p>
                 </div>
-                <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-[#217346] transition-colors shrink-0" />
+                <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-[#217346] transition-colors shrink-0" />
               </button>
             ))}
             {filteredClients.length === 0 && (
-              <p className="text-sm text-slate-400 text-center py-8">No clients match "{clientSearch}"</p>
+              <div className="flex items-center justify-center py-16 text-slate-400">
+                <p className="text-sm">No clients match "{clientSearch}"</p>
+              </div>
             )}
           </div>
+          {/* Footer */}
+          {clientGroups.length > 0 && (
+            <div className="shrink-0 border-t border-slate-100 px-5 py-3 flex items-center justify-between bg-white">
+              <span className="text-xs text-slate-400">
+                Showing <strong>{filteredClients.length}</strong> client{filteredClients.length !== 1 ? "s" : ""} · Page <strong>1</strong> of <strong>1</strong>
+              </span>
+            </div>
+          )}
         </div>
       </>
     );
@@ -1986,32 +1971,37 @@ function ProjectsTab() {
         {ExportDialog}
         <div>
           <Breadcrumb />
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-base font-bold text-slate-900">{selectedClient.client_name}</h2>
-              <p className="text-xs text-slate-400 mt-0.5">{selectedClient.projects.length} project{selectedClient.projects.length !== 1 ? "s" : ""}</p>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col h-full">
+          {/* Toolbar */}
+          <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 shrink-0 gap-3 flex-wrap">
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <div className="relative min-w-[220px] max-w-sm flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder="Search projects..."
+                  value={projectSearch}
+                  onChange={e => setProjectSearch(e.target.value)}
+                  className="w-full h-9 pl-9 pr-4 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]/40 focus:border-[#217346] transition-colors"
+                />
+              </div>
+              <span className="text-sm text-slate-500 whitespace-nowrap">
+                <strong className="text-slate-700">{selectedClient.client_name}</strong> · <strong className="text-slate-700">{selectedClient.projects.length}</strong> project{selectedClient.projects.length !== 1 ? "s" : ""}
+              </span>
             </div>
             <Button
               size="sm"
               variant="outline"
-              className="gap-1.5 border-[#217346] text-[#217346] hover:bg-[#217346]/5"
+              className="gap-1.5 border-[#217346] text-[#217346] hover:bg-[#217346]/5 shrink-0"
               onClick={() => openExport(clientExportProjects, `${selectedClient.client_name} – All Projects`)}
             >
               <Download className="w-3.5 h-3.5" />
               Export All
             </Button>
           </div>
-          <div className="relative mb-4">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search projects..."
-              value={projectSearch}
-              onChange={e => setProjectSearch(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#217346]/30 focus:border-[#217346]"
-            />
-          </div>
-          <div className="space-y-3">
+          {/* List */}
+          <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
             {filteredProjects.map(proj => {
               const projExport: AdminExportProject = {
                 project_name: proj.project_name,
@@ -2022,16 +2012,13 @@ function ProjectsTab() {
                 })),
               };
               return (
-                <div
-                  key={proj.project_id}
-                  className="flex items-center gap-3 bg-white border border-slate-200 rounded-xl hover:border-[#217346] hover:shadow-sm transition-all group"
-                >
+                <div key={proj.project_id} className="flex items-center hover:bg-slate-50/80 transition-colors group">
                   <button
-                    className="flex items-center gap-4 flex-1 p-4 text-left min-w-0"
+                    className="flex items-center gap-4 flex-1 px-5 py-4 text-left min-w-0"
                     onClick={() => { setSelectedProject(proj); setProjectView("resources"); }}
                   >
-                    <div className="w-10 h-10 rounded-xl bg-[#217346]/10 flex items-center justify-center shrink-0">
-                      <FolderOpen className="w-5 h-5 text-[#217346]" />
+                    <div className="w-9 h-9 rounded-xl bg-[#217346]/10 flex items-center justify-center shrink-0">
+                      <FolderOpen className="w-4 h-4 text-[#217346]" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
@@ -2049,10 +2036,10 @@ function ProjectsTab() {
                         )}
                       </div>
                     </div>
-                    <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-[#217346] transition-colors shrink-0" />
+                    <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-[#217346] transition-colors shrink-0" />
                   </button>
                   <button
-                    className="shrink-0 mr-3 p-2 rounded-lg text-slate-400 hover:text-[#217346] hover:bg-[#217346]/5 transition-colors"
+                    className="shrink-0 mr-4 p-2 rounded-lg text-slate-400 hover:text-[#217346] hover:bg-[#217346]/5 transition-colors"
                     title={`Export ${proj.project_name}`}
                     onClick={e => { e.stopPropagation(); openExport([projExport], proj.project_name); }}
                   >
@@ -2062,9 +2049,19 @@ function ProjectsTab() {
               );
             })}
             {filteredProjects.length === 0 && (
-              <p className="text-sm text-slate-400 text-center py-8">No projects match "{projectSearch}"</p>
+              <div className="flex items-center justify-center py-16 text-slate-400">
+                <p className="text-sm">No projects match "{projectSearch}"</p>
+              </div>
             )}
           </div>
+          {/* Footer */}
+          {selectedClient.projects.length > 0 && (
+            <div className="shrink-0 border-t border-slate-100 px-5 py-3 flex items-center justify-between bg-white">
+              <span className="text-xs text-slate-400">
+                Showing <strong>{filteredProjects.length}</strong> project{filteredProjects.length !== 1 ? "s" : ""} · Page <strong>1</strong> of <strong>1</strong>
+              </span>
+            </div>
+          )}
         </div>
       </>
     );
@@ -2086,14 +2083,18 @@ function ProjectsTab() {
         {ExportDialog}
         <div>
           <Breadcrumb />
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-base font-bold text-slate-900">{selectedProject.project_name}</h2>
-              <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1">
+        </div>
+        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col h-full">
+          {/* Toolbar */}
+          <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 shrink-0 gap-3 flex-wrap">
+            <div className="min-w-0">
+              <p className="font-semibold text-slate-900">{selectedProject.project_name}</p>
+              <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
                 <Building2 className="w-3 h-3" />{selectedProject.client_name}
+                {selectedProject.project_code && <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded ml-1">{selectedProject.project_code}</span>}
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0">
               <Button
                 size="sm"
                 variant="outline"
@@ -2113,46 +2114,53 @@ function ProjectsTab() {
               </Button>
             </div>
           </div>
-
           {selectedProject.resources.length === 0 ? (
-            <div className="border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center py-12 text-slate-400">
+            <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
               <Users className="w-8 h-8 mb-2 opacity-30" />
               <p className="font-medium text-slate-600">No resources</p>
             </div>
           ) : (
-            <div className="bg-white border rounded-xl overflow-hidden">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-[#217346] text-white text-xs">
-                    <th className="px-4 py-3 text-left font-semibold w-8">#</th>
-                    <th className="px-4 py-3 text-left font-semibold">Name</th>
-                    <th className="px-4 py-3 text-left font-semibold">Resource ID</th>
-                    <th className="px-4 py-3 text-left font-semibold">Email</th>
-                    <th className="px-4 py-3 text-left font-semibold">Designation</th>
-                    <th className="px-4 py-3 text-left font-semibold">Team</th>
-                    <th className="px-4 py-3 text-left font-semibold">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {selectedProject.resources.map((r, i) => (
-                    <tr key={i} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-4 py-3 text-slate-400 text-xs font-mono">{i + 1}</td>
-                      <td className="px-4 py-3 font-medium text-slate-800">{r.name || "—"}</td>
-                      <td className="px-4 py-3 font-mono text-xs text-slate-500">{r.resource_id || "—"}</td>
-                      <td className="px-4 py-3 text-slate-500 text-xs">{r.email || "—"}</td>
-                      <td className="px-4 py-3 text-slate-500 text-xs">{r.designation || "—"}</td>
-                      <td className="px-4 py-3 text-slate-500 text-xs">{r.team_name || "—"}</td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex items-center gap-1 text-xs font-medium ${r.is_active ? "text-emerald-600" : "text-slate-400"}`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${r.is_active ? "bg-emerald-500" : "bg-slate-300"}`} />
-                          {r.is_active ? "Active" : "Inactive"}
-                        </span>
-                      </td>
+            <>
+              <div className="overflow-auto flex-1">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 z-10">
+                    <tr className="bg-[#217346] text-white text-xs">
+                      <th className="px-4 py-3 text-left font-semibold w-8">#</th>
+                      <th className="px-4 py-3 text-left font-semibold">Name</th>
+                      <th className="px-4 py-3 text-left font-semibold">Resource ID</th>
+                      <th className="px-4 py-3 text-left font-semibold">Email</th>
+                      <th className="px-4 py-3 text-left font-semibold">Designation</th>
+                      <th className="px-4 py-3 text-left font-semibold">Team</th>
+                      <th className="px-4 py-3 text-left font-semibold">Status</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {selectedProject.resources.map((r, i) => (
+                      <tr key={i} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-4 py-3 text-slate-400 text-xs font-mono">{i + 1}</td>
+                        <td className="px-4 py-3 font-medium text-slate-800">{r.name || "—"}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-slate-500">{r.resource_id || "—"}</td>
+                        <td className="px-4 py-3 text-slate-500 text-xs">{r.email || "—"}</td>
+                        <td className="px-4 py-3 text-slate-500 text-xs">{r.designation || "—"}</td>
+                        <td className="px-4 py-3 text-slate-500 text-xs">{r.team_name || "—"}</td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center gap-1 text-xs font-medium ${r.is_active ? "text-emerald-600" : "text-slate-400"}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${r.is_active ? "bg-emerald-500" : "bg-slate-300"}`} />
+                            {r.is_active ? "Active" : "Inactive"}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {/* Footer */}
+              <div className="shrink-0 border-t border-slate-100 px-5 py-3 flex items-center justify-between bg-white">
+                <span className="text-xs text-slate-400">
+                  Showing <strong>{selectedProject.resources.length}</strong> resource{selectedProject.resources.length !== 1 ? "s" : ""} · Page <strong>1</strong> of <strong>1</strong>
+                </span>
+              </div>
+            </>
           )}
         </div>
       </>
@@ -2191,17 +2199,19 @@ export default function EmployeeManagerMappingPage() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-5xl mx-auto">
+      <div className="w-full flex flex-col h-full">
         {/* Header */}
-        <div className="mb-6">
+        <div className="mb-6 shrink-0">
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">{currentTabLabel}</h1>
         </div>
 
-        {/* Content area - tabs handled via sidebar navigation */}
-        {activeTab === "managers" && <ManagersTab />}
-        {activeTab === "employees" && <EmployeesTab />}
-        {activeTab === "logs" && <LogsTab />}
-        {activeTab === "projects" && <ProjectsTab />}
+        {/* Content area - fills remaining height */}
+        <div className="flex-1 min-h-0">
+          {activeTab === "managers" && <ManagersTab />}
+          {activeTab === "employees" && <EmployeesTab />}
+          {activeTab === "logs" && <LogsTab />}
+          {activeTab === "projects" && <ProjectsTab />}
+        </div>
       </div>
     </DashboardLayout>
   );

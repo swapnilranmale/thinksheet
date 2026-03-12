@@ -385,7 +385,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
 
         {/* Page content */}
-        <main className="flex-1 overflow-auto p-6">
+        <main className="flex-1 overflow-auto p-6 flex flex-col min-h-0">
           {children}
         </main>
       </div>

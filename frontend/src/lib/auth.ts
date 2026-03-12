@@ -68,7 +68,7 @@ export const authService = {
     if (params?.limit)  qs.set("limit",  String(params.limit));
     if (params?.search) qs.set("search", params.search);
     const q = qs.toString();
-    return authApi.get<{ success: boolean; data: any[]; pagination: { total: number; page: number; limit: number; pages: number } }>(`/managers${q ? `?${q}` : ""}`);
+    return authApi.get<{ success: boolean; data: any[]; pagination?: { total: number; page: number; limit: number; pages: number } }>(`/managers${q ? `?${q}` : ""}`);
   },
 
   updateManager: (id: string, data: { team_ids?: string[]; designation?: string; full_name?: string }) =>

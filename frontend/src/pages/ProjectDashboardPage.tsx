@@ -114,7 +114,7 @@ export default function ProjectDashboardPage() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-5xl mx-auto">
+      <div>
 
         {/* Header */}
         <div className="mb-6">
@@ -126,8 +126,8 @@ export default function ProjectDashboardPage() {
             Back to My Employees
           </button>
 
-          <div className="flex items-start gap-4">
-            <div className="w-12 h-12 rounded-xl bg-[#217346]/10 flex items-center justify-center shrink-0">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-[#217346]/20 to-[#217346]/10 flex items-center justify-center shrink-0 ring-2 ring-[#217346]/10">
               <FolderOpen className="w-6 h-6 text-[#217346]" />
             </div>
             <div className="flex-1 min-w-0">
@@ -153,7 +153,7 @@ export default function ProjectDashboardPage() {
             <div className="flex items-center gap-2 shrink-0">
               <Select value={String(month)} onValueChange={v => setMonth(Number(v))}>
                 <SelectTrigger className="w-36 h-9">
-                  <SelectValue />
+                  <SelectValue placeholder="Month" />
                 </SelectTrigger>
                 <SelectContent searchable>
                   {MONTHS.map((m, i) => (
@@ -163,7 +163,7 @@ export default function ProjectDashboardPage() {
               </Select>
               <Select value={String(year)} onValueChange={v => setYear(Number(v))}>
                 <SelectTrigger className="w-24 h-9">
-                  <SelectValue />
+                  <SelectValue placeholder="Year" />
                 </SelectTrigger>
                 <SelectContent searchable>
                   {yearOptions.map(y => (
@@ -178,53 +178,53 @@ export default function ProjectDashboardPage() {
         {/* Stats cards */}
         <div className="grid grid-cols-4 gap-4 mb-6">
           {/* Total */}
-          <div className="bg-white border border-slate-200 rounded-xl p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center">
-                <Users className="w-3.5 h-3.5 text-slate-600" />
+          <div className="bg-white border border-slate-200 rounded-xl p-5">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Total</span>
+              <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center">
+                <Users className="w-4 h-4 text-slate-500" />
               </div>
-              <span className="text-xs font-medium text-slate-500">Total</span>
             </div>
-            <p className="text-2xl font-bold text-slate-900">{team.length}</p>
-            <p className="text-xs text-slate-400 mt-0.5">Team members</p>
+            <p className="text-3xl font-bold text-slate-900">{team.length}</p>
+            <p className="text-xs text-slate-400 mt-1">Team members</p>
           </div>
 
           {/* Submitted */}
-          <div className={clsx("border rounded-xl p-4", STATUS_CONFIG.submitted.statBg)}>
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-7 h-7 rounded-lg bg-white/60 flex items-center justify-center">
-                <CheckCircle2 className={clsx("w-3.5 h-3.5", STATUS_CONFIG.submitted.iconClass)} />
+          <div className={clsx("border rounded-xl p-5", STATUS_CONFIG.submitted.statBg)}>
+            <div className="flex items-center justify-between mb-3">
+              <span className={clsx("text-xs font-semibold uppercase tracking-wide", STATUS_CONFIG.submitted.statText)}>Submitted</span>
+              <div className="w-8 h-8 rounded-lg bg-white/60 flex items-center justify-center">
+                <CheckCircle2 className={clsx("w-4 h-4", STATUS_CONFIG.submitted.iconClass)} />
               </div>
-              <span className={clsx("text-xs font-medium", STATUS_CONFIG.submitted.statText)}>Submitted</span>
             </div>
-            <p className={clsx("text-2xl font-bold", STATUS_CONFIG.submitted.statCount)}>{submitted}</p>
-            <p className={clsx("text-xs mt-0.5", STATUS_CONFIG.submitted.statText)}>
+            <p className={clsx("text-3xl font-bold", STATUS_CONFIG.submitted.statCount)}>{submitted}</p>
+            <p className={clsx("text-xs mt-1", STATUS_CONFIG.submitted.statText)}>
               {team.length ? Math.round((submitted / team.length) * 100) : 0}% of team
             </p>
           </div>
 
           {/* In Progress */}
-          <div className={clsx("border rounded-xl p-4", STATUS_CONFIG.draft.statBg)}>
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-7 h-7 rounded-lg bg-white/60 flex items-center justify-center">
-                <Clock className={clsx("w-3.5 h-3.5", STATUS_CONFIG.draft.iconClass)} />
+          <div className={clsx("border rounded-xl p-5", STATUS_CONFIG.draft.statBg)}>
+            <div className="flex items-center justify-between mb-3">
+              <span className={clsx("text-xs font-semibold uppercase tracking-wide", STATUS_CONFIG.draft.statText)}>In Progress</span>
+              <div className="w-8 h-8 rounded-lg bg-white/60 flex items-center justify-center">
+                <Clock className={clsx("w-4 h-4", STATUS_CONFIG.draft.iconClass)} />
               </div>
-              <span className={clsx("text-xs font-medium", STATUS_CONFIG.draft.statText)}>In Progress</span>
             </div>
-            <p className={clsx("text-2xl font-bold", STATUS_CONFIG.draft.statCount)}>{inProgress}</p>
-            <p className={clsx("text-xs mt-0.5", STATUS_CONFIG.draft.statText)}>Draft saved</p>
+            <p className={clsx("text-3xl font-bold", STATUS_CONFIG.draft.statCount)}>{inProgress}</p>
+            <p className={clsx("text-xs mt-1", STATUS_CONFIG.draft.statText)}>Draft saved</p>
           </div>
 
           {/* Not Started */}
-          <div className={clsx("border rounded-xl p-4", STATUS_CONFIG.not_started.statBg)}>
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-7 h-7 rounded-lg bg-white/60 flex items-center justify-center">
-                <CircleDashed className={clsx("w-3.5 h-3.5", STATUS_CONFIG.not_started.iconClass)} />
+          <div className={clsx("border rounded-xl p-5", STATUS_CONFIG.not_started.statBg)}>
+            <div className="flex items-center justify-between mb-3">
+              <span className={clsx("text-xs font-semibold uppercase tracking-wide", STATUS_CONFIG.not_started.statText)}>Not Started</span>
+              <div className="w-8 h-8 rounded-lg bg-white/60 flex items-center justify-center">
+                <CircleDashed className={clsx("w-4 h-4", STATUS_CONFIG.not_started.iconClass)} />
               </div>
-              <span className={clsx("text-xs font-medium", STATUS_CONFIG.not_started.statText)}>Not Started</span>
             </div>
-            <p className={clsx("text-2xl font-bold", STATUS_CONFIG.not_started.statCount)}>{notStarted}</p>
-            <p className={clsx("text-xs mt-0.5", STATUS_CONFIG.not_started.statText)}>No activity</p>
+            <p className={clsx("text-3xl font-bold", STATUS_CONFIG.not_started.statCount)}>{notStarted}</p>
+            <p className={clsx("text-xs mt-1", STATUS_CONFIG.not_started.statText)}>No activity</p>
           </div>
         </div>
 

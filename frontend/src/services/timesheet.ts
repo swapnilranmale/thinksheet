@@ -368,8 +368,13 @@ export const employeeService = {
     if (params?.limit)   qs.set("limit",   String(params.limit));
     if (params?.search)  qs.set("search",  params.search);
     const q = qs.toString();
-    const res = await api.get<{ success: boolean; data: EmployeeMaster[]; pagination: { total: number; page: number; limit: number; pages: number } }>(`/employees${q ? `?${q}` : ""}`);
-    return res.data;
+    const res = await api.get<{ success: boolean; data: EmployeeMaster[]; pagination?: { total: number; page: number; limit: number; pages: number } }>(`/employees${q ? `?${q}` : ""}`);
+    const body = res.data;
+    // Fallback for servers that haven't restarted yet (no pagination field)
+    if (!body.pagination) {
+      body.pagination = { total: body.data?.length ?? 0, page: 1, limit: 1000, pages: 1 };
+    }
+    return body;
   },
 
   /** Update employee metadata */

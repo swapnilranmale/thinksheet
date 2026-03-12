@@ -705,7 +705,7 @@ export default function AdminProjectsDashboardPage() {
   if (projectIds.length === 0) {
     return (
       <DashboardLayout>
-        <div className="max-w-5xl mx-auto flex flex-col items-center justify-center py-24 text-slate-400">
+        <div className="w-full flex flex-col items-center justify-center py-24 text-slate-400">
           <FolderOpen className="w-12 h-12 mb-3 opacity-20" />
           <p className="font-medium text-slate-600">No projects selected</p>
           <button onClick={() => navigate("/timesheet/mapping?tab=projects")} className="mt-4 text-sm text-[#217346] underline">
@@ -726,7 +726,7 @@ export default function AdminProjectsDashboardPage() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-5xl mx-auto">
+      <div className="w-full">
 
         {/* Back */}
         <button
