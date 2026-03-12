@@ -720,6 +720,40 @@ router.post('/sync', authenticate, checkActive, authorize(['ADMINISTRATOR']), as
                 // If empDoc is still null, skip mapping (error was already recorded)
                 if (!empDoc) continue;
 
+                // ── Ensure User credentials exist for this employee ────────────
+                // Uses emp_id (empCode) as the default login password.
+                // If a User already exists for this email it is left unchanged.
+                try {
+                    const existingUser = await User.findOne({
+                        email: empEmail.toLowerCase(),
+                        tenant_id: tenantId,
+                        is_deleted: { $ne: true }
+                    });
+                    if (!existingUser) {
+                        await User.create({
+                            email: empEmail.toLowerCase(),
+                            password: empCode,  // emp_id is the default password
+                            full_name: empName,
+                            role: 'EMPLOYEE',
+                            tenant_id: tenantId,
+                            is_active: true,
+                            is_deleted: false,
+                            must_change_password: true,
+                            permissions: {
+                                module_access: [
+                                    { module_name: 'timesheet', functions: ['view', 'create', 'edit'], submodules: [] }
+                                ],
+                                can_approve_expenses: false,
+                                can_create_users: false,
+                                approval_limit: null
+                            }
+                        });
+                    }
+                } catch (userErr) {
+                    // Non-fatal: log but continue — employee record already saved
+                    console.warn(`[Streamline sync] Could not create User for ${empEmail}: ${userErr.message}`);
+                }
+
                 // ── Extract project ────────────────────────────────────────────
                 const projObj = (r.project_id && typeof r.project_id === 'object') ? r.project_id : null;
                 const projectId = projObj?._id?.toString() || (typeof r.project_id === 'string' ? r.project_id : null);

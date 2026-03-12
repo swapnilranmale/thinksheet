@@ -268,7 +268,7 @@ export default function EmployeeManagementPage() {
       setLoading(true);
       const [empRes, allTeams] = await Promise.all([
         employeeService.getAll(),
-        streamlineService.getTeams(),
+        streamlineService.getEngineeringTeams(),
       ]);
       setEmployees(empRes.data);
 

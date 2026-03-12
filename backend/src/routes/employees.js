@@ -24,7 +24,8 @@ const TENANT_ID = process.env.TENANT_ID || 'thinkitive_inc';
 const DEFAULT_PASSWORD = 'Think@2026';
 
 // Helper: create or update EMPLOYEE User record
-async function ensureEmployeeUser(empEmail, empName, empId, tenantId) {
+// password defaults to empId (the employee's own ID), falling back to DEFAULT_PASSWORD
+async function ensureEmployeeUser(empEmail, empName, empId, tenantId, password = null) {
     const existing = await User.findOne({
         email: empEmail.toLowerCase(),
         tenant_id: tenantId,
@@ -37,7 +38,7 @@ async function ensureEmployeeUser(empEmail, empName, empId, tenantId) {
 
     const user = await User.create({
         email: empEmail.toLowerCase(),
-        password: DEFAULT_PASSWORD,
+        password: password || empId || DEFAULT_PASSWORD,
         full_name: empName,
         role: 'EMPLOYEE',
         tenant_id: tenantId,

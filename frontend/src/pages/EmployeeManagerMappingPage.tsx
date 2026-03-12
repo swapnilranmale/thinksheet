@@ -792,7 +792,7 @@ function EmployeesTab() {
       setLoading(true);
       const [empRes, teamsData] = await Promise.all([
         employeeService.getAll(),
-        streamlineService.getTeams(),
+        streamlineService.getEngineeringTeams(),
       ]);
       setEmployees(empRes.data);
       setTeams(teamsData);
@@ -814,7 +814,7 @@ function EmployeesTab() {
       const res = await streamlineService.syncResources();
       setSyncResult(res.data);
       setSyncResultOpen(true);
-      toast.success(`Sync complete — ${res.data.employees_synced} employees, ${res.data.mappings_synced} project mappings`);
+      toast.success(`Sync complete — ${res.data.employees_synced} employees synced. Login password = Employee ID.`);
       await loadData();
     } catch (err) {
       toast.error(getErrorMessage(err, "Sync from Streamline failed"));
@@ -866,7 +866,7 @@ function EmployeesTab() {
         team_name: team?.team_name,
         designation: newEmpDesignation.trim(),
       });
-      toast.success(`Employee ${newEmpName.trim()} created. Login: ${newEmpEmail.trim()} / Think@2026`);
+      toast.success(`Employee ${newEmpName.trim()} created. Login: ${newEmpEmail.trim()} / ${newEmpId.trim()}`);
       setCreateOpen(false);
       setNewEmpId(""); setNewEmpEmail(""); setNewEmpName(""); setNewEmpTeamId(""); setNewEmpDesignation(""); setCreateErrors({});
       await loadData();
@@ -944,37 +944,43 @@ function EmployeesTab() {
 
   return (
     <div>
+      {/* ── Toolbar ── */}
       <div className="flex items-center justify-between mb-5 gap-3 flex-wrap">
         <div className="flex items-center gap-3 flex-1 min-w-0 flex-wrap">
           {/* Search */}
-          <div className="relative min-w-[200px] max-w-xs flex-1">
+          <div className="relative min-w-[220px] max-w-sm flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
             <input
               type="text"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               placeholder="Search name, email or ID…"
-              className="w-full h-9 pl-9 pr-3 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346] bg-white"
+              className="w-full h-9 pl-9 pr-8 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]/40 focus:border-[#217346] transition-colors hover:border-slate-300"
             />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M18 6 6 18M6 6l12 12"/></svg>
+              </button>
+            )}
           </div>
           <Select value={filterTeamId} onValueChange={setFilterTeamId}>
-            <SelectTrigger className="w-40 h-9">
+            <SelectTrigger className="w-40 h-9 border-slate-200 hover:border-slate-300 focus:ring-[#217346]/40 focus:border-[#217346]">
               <span className="text-sm truncate">
-                {filterTeamId === "all"
-                  ? "All Teams"
-                  : (teams.find(t => t._id === filterTeamId)?.team_name || "All Teams")}
+                {filterTeamId === "all" ? "All Teams" : (teams.find(t => t._id === filterTeamId)?.team_name || "All Teams")}
               </span>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Teams</SelectItem>
-              {teams.map(t => (
-                <SelectItem key={t._id} value={t._id}>{t.team_name}</SelectItem>
-              ))}
+              {teams.map(t => <SelectItem key={t._id} value={t._id}>{t.team_name}</SelectItem>)}
             </SelectContent>
           </Select>
-          <p className="text-sm text-slate-400 whitespace-nowrap">
-            {filtered.length} employee{filtered.length !== 1 ? "s" : ""}
-          </p>
+          <div className="flex items-center gap-1.5 text-sm text-slate-500">
+            <Users className="w-4 h-4 text-[#217346]" />
+            <span><strong className="text-slate-700">{filtered.length}</strong> of <strong className="text-slate-700">{employees.length}</strong></span>
+          </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
           <Button
@@ -991,7 +997,7 @@ function EmployeesTab() {
             <Upload className="w-4 h-4" />
             Bulk Upload
           </Button>
-          <Button onClick={() => setCreateOpen(true)} className="bg-[#217346] hover:bg-[#185c37] text-white gap-2 whitespace-nowrap">
+          <Button onClick={() => setCreateOpen(true)} className="bg-[#217346] hover:bg-[#185c37] text-white gap-2 whitespace-nowrap shadow-sm">
             <Plus className="w-4 h-4" />
             Add Employee
           </Button>
@@ -999,58 +1005,76 @@ function EmployeesTab() {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-16 text-slate-400 gap-2">
-          <Loader2 className="w-5 h-5 animate-spin" />
-          <span>Loading employees...</span>
+        <div className="flex flex-col items-center justify-center py-20 text-slate-400 gap-3">
+          <Loader2 className="w-7 h-7 animate-spin text-[#217346]" />
+          <span className="text-sm">Loading employees...</span>
         </div>
       ) : filtered.length === 0 ? (
-        <div className="border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center py-16 text-slate-400">
-          <Users className="w-10 h-10 mb-3 opacity-30" />
-          <p className="font-medium text-slate-600">No employees yet</p>
-          <p className="text-sm mt-1">Click "Sync from Streamline" to import all employees from Resource Master, or add manually</p>
+        <div className="border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center py-16">
+          <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-3">
+            <Users className="w-7 h-7 text-slate-400 opacity-60" />
+          </div>
+          <p className="font-medium text-slate-600">
+            {searchQuery || filterTeamId !== "all" ? "No employees match your filters" : "No employees yet"}
+          </p>
+          <p className="text-sm mt-1 text-slate-400 text-center max-w-xs">
+            {searchQuery || filterTeamId !== "all"
+              ? "Try adjusting your search or team filter"
+              : `Click "Sync from Streamline" to import employees, or add manually`}
+          </p>
+          {(searchQuery || filterTeamId !== "all") && (
+            <button
+              onClick={() => { setSearchQuery(""); setFilterTeamId("all"); }}
+              className="mt-3 text-sm text-[#217346] hover:underline"
+            >
+              Clear filters
+            </button>
+          )}
         </div>
       ) : (
         <>
           {/* Desktop table (md+) */}
-          <div className="hidden md:block bg-white border border-slate-200 rounded-xl overflow-hidden">
+          <div className="hidden md:block bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="bg-slate-50 border-b border-slate-200">
+                <thead className="bg-slate-50 border-b border-slate-100">
                   <tr>
-                    <th className="text-left px-5 py-3 font-medium text-slate-500 whitespace-nowrap">Employee</th>
-                    <th className="text-left px-5 py-3 font-medium text-slate-500 whitespace-nowrap">Emp ID</th>
-                    <th className="text-left px-5 py-3 font-medium text-slate-500 whitespace-nowrap">Email</th>
-                    <th className="text-left px-5 py-3 font-medium text-slate-500 whitespace-nowrap">Team</th>
-                    <th className="text-right px-5 py-3 font-medium text-slate-500 whitespace-nowrap">Actions</th>
+                    <th className="text-left px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Employee</th>
+                    <th className="text-left px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Emp ID</th>
+                    <th className="text-left px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Email</th>
+                    <th className="text-left px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Team</th>
+                    <th className="text-right px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filtered.map(emp => (
-                    <tr key={emp._id} className="hover:bg-slate-50">
-                      <td className="px-5 py-3">
+                    <tr key={emp._id} className="hover:bg-slate-50/80 transition-colors group cursor-default">
+                      <td className="px-5 py-3.5">
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-[#217346]/10 flex items-center justify-center text-xs font-semibold text-[#217346] shrink-0">
+                          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#217346]/20 to-[#217346]/10 flex items-center justify-center text-xs font-bold text-[#217346] shrink-0 ring-2 ring-[#217346]/10">
                             {getInitials(emp.employee_name)}
                           </div>
                           <div>
-                            <p className="font-medium text-slate-900">{emp.employee_name}</p>
-                            {emp.designation && <p className="text-xs text-slate-400">{emp.designation}</p>}
+                            <p className="font-semibold text-slate-900">{emp.employee_name}</p>
+                            {emp.designation && <p className="text-xs text-slate-400 mt-0.5">{emp.designation}</p>}
                           </div>
                         </div>
                       </td>
-                      <td className="px-5 py-3 text-slate-600 whitespace-nowrap">{emp.unique_id}</td>
-                      <td className="px-5 py-3 text-slate-600 whitespace-nowrap">{emp.official_email}</td>
-                      <td className="px-5 py-3">
+                      <td className="px-5 py-3.5">
+                        <span className="font-mono text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded-md">{emp.unique_id}</span>
+                      </td>
+                      <td className="px-5 py-3.5 text-slate-500 text-sm whitespace-nowrap">{emp.official_email}</td>
+                      <td className="px-5 py-3.5">
                         {emp.team_name ? (
-                          <Badge variant="outline" className="text-xs border-blue-200 bg-blue-50 text-blue-700 whitespace-nowrap">
+                          <span className="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-md bg-[#217346]/8 text-[#217346] border border-[#217346]/20 whitespace-nowrap">
                             {emp.team_name}
-                          </Badge>
+                          </span>
                         ) : (
-                          <span className="text-xs text-slate-400">—</span>
+                          <span className="text-xs text-slate-300">—</span>
                         )}
                       </td>
-                      <td className="px-5 py-3 text-right">
-                        <div className="flex items-center gap-1 justify-end">
+                      <td className="px-5 py-3.5 text-right">
+                        <div className="flex items-center gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
                           <button
                             onClick={() => setViewTarget(emp)}
                             className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors"
@@ -1084,16 +1108,16 @@ function EmployeesTab() {
           {/* Mobile card list (< md) */}
           <div className="md:hidden space-y-2.5">
             {filtered.map(emp => (
-              <div key={emp._id} className="bg-white border border-slate-200 rounded-xl px-4 py-3.5">
+              <div key={emp._id} className="bg-white border border-slate-200 rounded-xl px-4 py-3.5 hover:border-[#217346]/30 hover:shadow-sm transition-all group">
                 <div className="flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-full bg-[#217346]/10 flex items-center justify-center text-xs font-semibold text-[#217346] shrink-0 mt-0.5">
+                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#217346]/20 to-[#217346]/10 flex items-center justify-center text-xs font-bold text-[#217346] shrink-0 ring-2 ring-[#217346]/10 mt-0.5">
                     {getInitials(emp.employee_name)}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-slate-900 text-sm">{emp.employee_name}</p>
                     {emp.designation && <p className="text-xs text-slate-400">{emp.designation}</p>}
                   </div>
-                  <div className="flex items-center gap-0.5 shrink-0">
+                  <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button onClick={() => setViewTarget(emp)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors" title="View">
                       <Eye className="w-4 h-4" />
                     </button>
@@ -1106,10 +1130,12 @@ function EmployeesTab() {
                   </div>
                 </div>
                 <div className="mt-2 space-y-1 pl-12">
-                  <p className="text-xs text-slate-500 font-mono">{emp.unique_id}</p>
-                  <p className="text-xs text-slate-500 truncate">{emp.official_email}</p>
+                  <span className="font-mono text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md">{emp.unique_id}</span>
+                  <p className="text-xs text-slate-500 truncate mt-1">{emp.official_email}</p>
                   {emp.team_name && (
-                    <Badge variant="outline" className="text-xs border-blue-200 bg-blue-50 text-blue-700">{emp.team_name}</Badge>
+                    <span className="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-md bg-[#217346]/8 text-[#217346] border border-[#217346]/20 mt-1">
+                      {emp.team_name}
+                    </span>
                   )}
                 </div>
               </div>
@@ -1121,73 +1147,88 @@ function EmployeesTab() {
       {/* Bulk Upload Dialog */}
       <Dialog open={uploadOpen} onOpenChange={(v) => { if (!v) { setUploadFile(null); setUploadResult(null); setUploadTeamId(""); } setUploadOpen(v); }}>
         <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Upload className="w-5 h-5 text-[#217346]" />
-              Bulk Upload Employees
-            </DialogTitle>
+          <DialogHeader className="pb-2">
+            <div className="flex items-center gap-3 mb-1">
+              <div className="w-10 h-10 rounded-xl bg-[#217346]/10 flex items-center justify-center shrink-0">
+                <Upload className="w-5 h-5 text-[#217346]" />
+              </div>
+              <div>
+                <DialogTitle className="text-lg font-semibold text-slate-800">Bulk Upload Employees</DialogTitle>
+                <DialogDescription className="text-sm text-slate-500 mt-0.5">Upload a CSV or Excel file to add multiple employees at once.</DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
-          <div className="space-y-4 py-2">
+          <div className="space-y-4 py-1">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">
                 Team <span className="text-red-500">*</span>
               </label>
               <Select value={uploadTeamId} onValueChange={setUploadTeamId}>
-                <SelectTrigger>
+                <SelectTrigger className="border-slate-200 bg-slate-50 hover:border-slate-300 focus:ring-[#217346]/40 focus:border-[#217346]">
                   <SelectValue placeholder="Select team..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {teams.map(t => (
-                    <SelectItem key={t._id} value={t._id}>{t.team_name}</SelectItem>
-                  ))}
+                  {teams.map(t => <SelectItem key={t._id} value={t._id}>{t.team_name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">
                 File (CSV or Excel) <span className="text-red-500">*</span>
               </label>
               <div
                 onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-dashed border-slate-300 rounded-lg p-6 text-center cursor-pointer hover:border-[#217346] transition-colors"
+                className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all ${uploadFile ? "border-[#217346]/40 bg-[#217346]/5" : "border-slate-200 hover:border-[#217346]/50 hover:bg-[#217346]/5"}`}
               >
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".csv,.xlsx,.xls"
-                  className="hidden"
-                  onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
-                />
+                <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={(e) => setUploadFile(e.target.files?.[0] || null)} />
                 {uploadFile ? (
-                  <p className="text-sm font-medium text-slate-700">{uploadFile.name}</p>
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="w-10 h-10 rounded-xl bg-[#217346]/10 flex items-center justify-center">
+                      <CheckCircle2 className="w-5 h-5 text-[#217346]" />
+                    </div>
+                    <p className="text-sm font-medium text-[#217346]">{uploadFile.name}</p>
+                    <p className="text-xs text-slate-400">Click to change file</p>
+                  </div>
                 ) : (
-                  <>
-                    <Upload className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                    <p className="text-sm text-slate-500">Click to select CSV or Excel file</p>
-                    <p className="text-xs text-slate-400 mt-1">Required columns: Emp_ID, Emp_Email, Emp_Name</p>
-                  </>
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center">
+                      <Upload className="w-5 h-5 text-slate-400" />
+                    </div>
+                    <p className="text-sm text-slate-600 font-medium">Click to select file</p>
+                    <p className="text-xs text-slate-400">CSV or Excel · Required columns: Emp_ID, Emp_Email, Emp_Name</p>
+                  </div>
                 )}
               </div>
             </div>
-            <button
-              onClick={() => employeeService.downloadTemplate()}
-              className="flex items-center gap-1.5 text-sm text-[#217346] hover:underline"
-            >
+            <button onClick={() => employeeService.downloadTemplate()} className="flex items-center gap-1.5 text-sm text-[#217346] hover:underline">
               <Download className="w-3.5 h-3.5" />
               Download CSV template
             </button>
             {uploadResult && (
-              <div className="bg-slate-50 rounded-lg p-4 text-sm space-y-1">
-                <p className="font-medium">Upload Results:</p>
-                <p className="text-green-700">Created: {uploadResult.summary.created}</p>
-                <p className="text-orange-600">Skipped (duplicates): {uploadResult.summary.skipped}</p>
-                <p className="text-red-600">Errors: {uploadResult.summary.errors}</p>
+              <div className="rounded-xl border border-slate-200 overflow-hidden">
+                <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-200">
+                  <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Upload Results</p>
+                </div>
+                <div className="grid grid-cols-3 divide-x divide-slate-100">
+                  <div className="p-3 text-center">
+                    <p className="text-xl font-bold text-green-600">{uploadResult.summary.created}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">Created</p>
+                  </div>
+                  <div className="p-3 text-center">
+                    <p className="text-xl font-bold text-orange-500">{uploadResult.summary.skipped}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">Skipped</p>
+                  </div>
+                  <div className="p-3 text-center">
+                    <p className="text-xl font-bold text-red-500">{uploadResult.summary.errors}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">Errors</p>
+                  </div>
+                </div>
                 {uploadResult.data.errors.length > 0 && (
-                  <details className="mt-2">
-                    <summary className="cursor-pointer text-red-600">View errors</summary>
-                    <ul className="mt-1 space-y-1 text-xs">
+                  <details className="border-t border-slate-100">
+                    <summary className="cursor-pointer text-xs text-red-600 font-medium px-4 py-2 hover:bg-red-50 transition-colors">View {uploadResult.data.errors.length} error{uploadResult.data.errors.length !== 1 ? "s" : ""}</summary>
+                    <ul className="px-4 pb-3 space-y-1">
                       {uploadResult.data.errors.map((e: any, i: number) => (
-                        <li key={i} className="text-red-500">{e.emp_id || e.email || 'Row'}: {e.reason}</li>
+                        <li key={i} className="text-xs text-red-500">• {e.emp_id || e.email || 'Row'}: {e.reason}</li>
                       ))}
                     </ul>
                   </details>
@@ -1195,11 +1236,11 @@ function EmployeesTab() {
               </div>
             )}
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setUploadOpen(false)} disabled={uploading}>Cancel</Button>
-            <Button onClick={handleUpload} disabled={uploading || !uploadFile || !uploadTeamId} className="bg-[#217346] hover:bg-[#185c37] text-white gap-2">
-              {uploading && <Loader2 className="w-4 h-4 animate-spin" />}
-              Upload
+          <DialogFooter className="pt-2 gap-2">
+            <Button variant="outline" onClick={() => setUploadOpen(false)} disabled={uploading} className="flex-1 sm:flex-none">Cancel</Button>
+            <Button onClick={handleUpload} disabled={uploading || !uploadFile || !uploadTeamId} className="flex-1 sm:flex-none bg-[#217346] hover:bg-[#185c37] text-white gap-2 shadow-sm">
+              {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+              {uploading ? "Uploading..." : "Upload"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1207,81 +1248,105 @@ function EmployeesTab() {
 
       {/* Create Employee Dialog */}
       <Dialog open={createOpen} onOpenChange={(v) => { if (!creating && !v) { setNewEmpId(""); setNewEmpEmail(""); setNewEmpName(""); setNewEmpTeamId(""); setNewEmpDesignation(""); setCreateErrors({}); } setCreateOpen(v); }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <UserPlus className="w-5 h-5 text-[#217346]" />
-              Add Employee
-            </DialogTitle>
+        <DialogContent className="max-w-lg">
+          <DialogHeader className="pb-2">
+            <div className="flex items-center gap-3 mb-1">
+              <div className="w-10 h-10 rounded-xl bg-[#217346]/10 flex items-center justify-center shrink-0">
+                <UserPlus className="w-5 h-5 text-[#217346]" />
+              </div>
+              <div>
+                <DialogTitle className="text-lg font-semibold text-slate-800">Add Employee</DialogTitle>
+                <DialogDescription className="text-sm text-slate-500 mt-0.5">Create a new employee account and assign to a team.</DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
-          <div className="space-y-4 py-2">
-            {/* Employee ID */}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Employee ID <span className="text-red-500">*</span></label>
-              <input
-                type="text"
-                value={newEmpId}
-                onChange={e => { setNewEmpId(e.target.value); if (createErrors.emp_id) setCreateErrors(p => ({ ...p, emp_id: "" })); }}
-                placeholder="e.g. 340"
-                className={`w-full h-10 rounded-lg border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346] ${createErrors.emp_id ? "border-red-400 bg-red-50" : "border-slate-300"}`}
-              />
-              <FieldError msg={createErrors.emp_id} />
+          <div className="space-y-4 py-1">
+            {/* Emp ID + Name row */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Employee ID <span className="text-red-500">*</span></label>
+                <div className="relative">
+                  <IdCard className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={newEmpId}
+                    onChange={e => { setNewEmpId(e.target.value); if (createErrors.emp_id) setCreateErrors(p => ({ ...p, emp_id: "" })); }}
+                    placeholder="e.g. 340"
+                    className={`w-full h-10 rounded-lg border pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]/40 focus:border-[#217346] transition-colors ${createErrors.emp_id ? "border-red-400 bg-red-50" : "border-slate-200 bg-slate-50 hover:border-slate-300"}`}
+                  />
+                </div>
+                <FieldError msg={createErrors.emp_id} />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Designation</label>
+                <div className="relative">
+                  <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={newEmpDesignation}
+                    onChange={e => setNewEmpDesignation(e.target.value)}
+                    placeholder="Software Engineer"
+                    className="w-full h-10 rounded-lg border border-slate-200 bg-slate-50 hover:border-slate-300 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]/40 focus:border-[#217346] transition-colors"
+                  />
+                </div>
+              </div>
             </div>
             {/* Full Name */}
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Full Name <span className="text-red-500">*</span></label>
-              <input
-                type="text"
-                value={newEmpName}
-                onChange={e => { setNewEmpName(e.target.value); if (createErrors.emp_name) setCreateErrors(p => ({ ...p, emp_name: "" })); }}
-                placeholder="e.g. Abhay Ahire"
-                className={`w-full h-10 rounded-lg border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346] ${createErrors.emp_name ? "border-red-400 bg-red-50" : "border-slate-300"}`}
-              />
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Full Name <span className="text-red-500">*</span></label>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                <input
+                  type="text"
+                  value={newEmpName}
+                  onChange={e => { setNewEmpName(e.target.value); if (createErrors.emp_name) setCreateErrors(p => ({ ...p, emp_name: "" })); }}
+                  placeholder="Abhay Ahire"
+                  className={`w-full h-10 rounded-lg border pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]/40 focus:border-[#217346] transition-colors ${createErrors.emp_name ? "border-red-400 bg-red-50" : "border-slate-200 bg-slate-50 hover:border-slate-300"}`}
+                />
+              </div>
               <FieldError msg={createErrors.emp_name} />
             </div>
             {/* Email */}
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Email <span className="text-red-500">*</span></label>
-              <input
-                type="email"
-                value={newEmpEmail}
-                onChange={e => { setNewEmpEmail(e.target.value); if (createErrors.emp_email) setCreateErrors(p => ({ ...p, emp_email: "" })); }}
-                placeholder="abhay@company.com"
-                className={`w-full h-10 rounded-lg border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346] ${createErrors.emp_email ? "border-red-400 bg-red-50" : "border-slate-300"}`}
-              />
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Email <span className="text-red-500">*</span></label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                <input
+                  type="email"
+                  value={newEmpEmail}
+                  onChange={e => { setNewEmpEmail(e.target.value); if (createErrors.emp_email) setCreateErrors(p => ({ ...p, emp_email: "" })); }}
+                  placeholder="abhay@company.com"
+                  className={`w-full h-10 rounded-lg border pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]/40 focus:border-[#217346] transition-colors ${createErrors.emp_email ? "border-red-400 bg-red-50" : "border-slate-200 bg-slate-50 hover:border-slate-300"}`}
+                />
+              </div>
               <FieldError msg={createErrors.emp_email} />
             </div>
             {/* Team */}
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Team <span className="text-red-500">*</span></label>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Team <span className="text-red-500">*</span></label>
               <Select value={newEmpTeamId} onValueChange={v => { setNewEmpTeamId(v); if (createErrors.team_id) setCreateErrors(p => ({ ...p, team_id: "" })); }}>
-                <SelectTrigger className={createErrors.team_id ? "border-red-400 bg-red-50" : ""}><SelectValue placeholder="Select team..." /></SelectTrigger>
+                <SelectTrigger className={`${createErrors.team_id ? "border-red-400 bg-red-50" : "border-slate-200 bg-slate-50 hover:border-slate-300"} focus:ring-[#217346]/40 focus:border-[#217346]`}>
+                  <SelectValue placeholder="Select team..." />
+                </SelectTrigger>
                 <SelectContent>
                   {teams.map(t => <SelectItem key={t._id} value={t._id}>{t.team_name}</SelectItem>)}
                 </SelectContent>
               </Select>
               <FieldError msg={createErrors.team_id} />
             </div>
-            {/* Designation */}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Designation</label>
-              <input
-                type="text"
-                value={newEmpDesignation}
-                onChange={e => setNewEmpDesignation(e.target.value)}
-                placeholder="e.g. Software Engineer"
-                className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]"
-              />
+            {/* Default password hint */}
+            <div className="flex items-start gap-2.5 bg-slate-50 rounded-lg px-3 py-2.5 border border-slate-100">
+              <Lock className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
+              <p className="text-xs text-slate-500">
+                Default password: <span className="font-mono font-semibold text-slate-700">Employee ID</span> — employee logs in with their own ID as the password.
+              </p>
             </div>
-            <p className="text-xs text-slate-400 bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
-              Default password: <span className="font-mono font-medium text-slate-600">Think@2026</span> — employee must change on first login
-            </p>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={creating}>Cancel</Button>
-            <Button onClick={handleCreate} disabled={creating} className="bg-[#217346] hover:bg-[#185c37] text-white gap-2">
-              {creating && <Loader2 className="w-4 h-4 animate-spin" />}
-              Create Employee
+          <DialogFooter className="pt-2 gap-2">
+            <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={creating} className="flex-1 sm:flex-none">Cancel</Button>
+            <Button onClick={handleCreate} disabled={creating} className="flex-1 sm:flex-none bg-[#217346] hover:bg-[#185c37] text-white gap-2 shadow-sm">
+              {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+              {creating ? "Creating..." : "Create Employee"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1289,123 +1354,143 @@ function EmployeesTab() {
 
       {/* View Employee Dialog */}
       <Dialog open={!!viewTarget} onOpenChange={(v) => { if (!v) setViewTarget(null); }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <IdCard className="w-5 h-5 text-[#217346]" />
-              Employee Record
-            </DialogTitle>
-          </DialogHeader>
+        <DialogContent className="max-w-sm">
           {viewTarget && (
-            <div className="py-2 space-y-4">
-              {/* Avatar + name */}
-              <div className="flex items-center gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100">
-                <div className="w-12 h-12 rounded-full bg-[#217346]/10 flex items-center justify-center text-base font-bold text-[#217346] shrink-0">
+            <>
+              {/* Profile header */}
+              <div className="flex flex-col items-center pt-2 pb-4 text-center">
+                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#217346]/20 to-[#217346]/10 flex items-center justify-center text-xl font-bold text-[#217346] ring-4 ring-[#217346]/10 mb-3">
                   {getInitials(viewTarget.employee_name)}
                 </div>
-                <div>
-                  <p className="font-semibold text-slate-900 text-base">{viewTarget.employee_name}</p>
-                  {viewTarget.designation && (
-                    <p className="text-sm text-slate-500 flex items-center gap-1 mt-0.5">
-                      <Briefcase className="w-3.5 h-3.5" />
-                      {viewTarget.designation}
-                    </p>
-                  )}
-                </div>
-              </div>
-              {/* Fields grid */}
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div className="space-y-0.5">
-                  <p className="text-xs text-slate-400 font-medium uppercase tracking-wide">Employee ID</p>
-                  <p className="text-slate-800 font-mono font-medium">{viewTarget.unique_id || "—"}</p>
-                </div>
-                <div className="space-y-0.5">
-                  <p className="text-xs text-slate-400 font-medium uppercase tracking-wide">Team</p>
-                  {viewTarget.team_name
-                    ? <Badge variant="outline" className="text-xs border-blue-200 bg-blue-50 text-blue-700">{viewTarget.team_name}</Badge>
-                    : <p className="text-slate-400">—</p>
-                  }
-                </div>
-                <div className="col-span-2 space-y-0.5">
-                  <p className="text-xs text-slate-400 font-medium uppercase tracking-wide">Email</p>
-                  <p className="text-slate-800 flex items-center gap-1.5">
-                    <Mail className="w-3.5 h-3.5 text-slate-400" />
-                    {viewTarget.official_email}
+                <p className="font-bold text-slate-900 text-lg leading-tight">{viewTarget.employee_name}</p>
+                {viewTarget.designation && (
+                  <p className="text-sm text-slate-500 flex items-center gap-1 mt-1">
+                    <Briefcase className="w-3.5 h-3.5" />
+                    {viewTarget.designation}
                   </p>
+                )}
+                {viewTarget.team_name && (
+                  <span className="inline-flex items-center mt-2 text-xs font-medium px-2.5 py-1 rounded-full bg-[#217346]/10 text-[#217346] border border-[#217346]/20">
+                    {viewTarget.team_name}
+                  </span>
+                )}
+              </div>
+
+              {/* Info rows */}
+              <div className="divide-y divide-slate-100 border border-slate-100 rounded-xl overflow-hidden mb-4">
+                <div className="flex items-center gap-3 px-4 py-3 bg-slate-50/50">
+                  <IdCard className="w-4 h-4 text-slate-400 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-slate-400 font-medium uppercase tracking-wide">Employee ID</p>
+                    <p className="text-sm font-mono font-semibold text-slate-800 mt-0.5">{viewTarget.unique_id || "—"}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 px-4 py-3 bg-slate-50/50">
+                  <Mail className="w-4 h-4 text-slate-400 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-slate-400 font-medium uppercase tracking-wide">Email</p>
+                    <p className="text-sm text-slate-800 mt-0.5 truncate">{viewTarget.official_email}</p>
+                  </div>
                 </div>
               </div>
-            </div>
+
+              <DialogFooter className="gap-2">
+                <Button variant="outline" onClick={() => setViewTarget(null)} className="flex-1">Close</Button>
+                <Button
+                  className="flex-1 bg-[#217346] hover:bg-[#185c37] text-white gap-2"
+                  onClick={() => { setViewTarget(null); openEdit(viewTarget); }}
+                >
+                  <Pencil className="w-4 h-4" />
+                  Edit
+                </Button>
+              </DialogFooter>
+            </>
           )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setViewTarget(null)}>Close</Button>
-            <Button
-              className="bg-[#217346] hover:bg-[#185c37] text-white gap-2"
-              onClick={() => { setViewTarget(null); if (viewTarget) openEdit(viewTarget); }}
-            >
-              <Pencil className="w-4 h-4" />
-              Edit
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Edit Employee Dialog */}
       <Dialog open={!!editTarget} onOpenChange={(v) => { if (!editing && !v) setEditTarget(null); }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Pencil className="w-5 h-5 text-[#217346]" />
-              Edit Employee
-            </DialogTitle>
+        <DialogContent className="max-w-lg">
+          <DialogHeader className="pb-2">
+            <div className="flex items-center gap-3 mb-1">
+              <div className="w-10 h-10 rounded-xl bg-[#217346]/10 flex items-center justify-center shrink-0">
+                <Pencil className="w-5 h-5 text-[#217346]" />
+              </div>
+              <div>
+                <DialogTitle className="text-lg font-semibold text-slate-800">Edit Employee</DialogTitle>
+                <DialogDescription className="text-sm text-slate-500 mt-0.5">Update employee details and team assignment.</DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Full Name <span className="text-red-500">*</span></label>
-              <input
-                type="text"
-                value={editEmpName}
-                onChange={e => { setEditEmpName(e.target.value); if (editErrors.emp_name) setEditErrors(p => ({ ...p, emp_name: "" })); }}
-                className={`w-full h-10 rounded-lg border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346] ${editErrors.emp_name ? "border-red-400 bg-red-50" : "border-slate-300"}`}
-              />
-              <FieldError msg={editErrors.emp_name} />
+          <div className="space-y-4 py-1">
+            {/* Full Name + Designation */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Full Name <span className="text-red-500">*</span></label>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={editEmpName}
+                    onChange={e => { setEditEmpName(e.target.value); if (editErrors.emp_name) setEditErrors(p => ({ ...p, emp_name: "" })); }}
+                    placeholder="Full name"
+                    className={`w-full h-10 rounded-lg border pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]/40 focus:border-[#217346] transition-colors ${editErrors.emp_name ? "border-red-400 bg-red-50" : "border-slate-200 bg-slate-50 hover:border-slate-300"}`}
+                  />
+                </div>
+                <FieldError msg={editErrors.emp_name} />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Designation</label>
+                <div className="relative">
+                  <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={editEmpDesignation}
+                    onChange={e => setEditEmpDesignation(e.target.value)}
+                    placeholder="Software Engineer"
+                    className="w-full h-10 rounded-lg border border-slate-200 bg-slate-50 hover:border-slate-300 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]/40 focus:border-[#217346] transition-colors"
+                  />
+                </div>
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Designation</label>
-              <input
-                type="text"
-                value={editEmpDesignation}
-                onChange={e => setEditEmpDesignation(e.target.value)}
-                placeholder="e.g. Software Engineer"
-                className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]"
-              />
-            </div>
+            {/* Team */}
             {teams.length > 1 && (
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Team</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Team</label>
                 <Select value={editEmpTeamId} onValueChange={setEditEmpTeamId}>
-                  <SelectTrigger><SelectValue placeholder="Select team..." /></SelectTrigger>
+                  <SelectTrigger className="border-slate-200 bg-slate-50 hover:border-slate-300 focus:ring-[#217346]/40 focus:border-[#217346]">
+                    <SelectValue placeholder="Select team..." />
+                  </SelectTrigger>
                   <SelectContent>
                     {teams.map(t => <SelectItem key={t._id} value={t._id}>{t.team_name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
             )}
-            <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-100">
+            {/* Read-only fields */}
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <p className="text-xs text-slate-400 mb-0.5">Email</p>
-                <p className="text-sm text-slate-600 truncate">{editTarget?.official_email}</p>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Email</label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                  <p className="w-full h-10 rounded-lg border border-slate-200 bg-slate-100 pl-9 pr-3 text-sm text-slate-500 flex items-center cursor-not-allowed truncate">{editTarget?.official_email}</p>
+                </div>
               </div>
               <div>
-                <p className="text-xs text-slate-400 mb-0.5">Employee ID</p>
-                <p className="text-sm font-mono text-slate-600">{editTarget?.unique_id}</p>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Employee ID</label>
+                <div className="relative">
+                  <IdCard className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                  <p className="w-full h-10 rounded-lg border border-slate-200 bg-slate-100 pl-9 pr-3 text-sm text-slate-500 flex items-center font-mono cursor-not-allowed">{editTarget?.unique_id}</p>
+                </div>
               </div>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditTarget(null)} disabled={editing}>Cancel</Button>
-            <Button onClick={handleEdit} disabled={editing} className="bg-[#217346] hover:bg-[#185c37] text-white gap-2">
-              {editing && <Loader2 className="w-4 h-4 animate-spin" />}
-              Save Changes
+          <DialogFooter className="pt-2 gap-2">
+            <Button variant="outline" onClick={() => setEditTarget(null)} disabled={editing} className="flex-1 sm:flex-none">Cancel</Button>
+            <Button onClick={handleEdit} disabled={editing} className="flex-1 sm:flex-none bg-[#217346] hover:bg-[#185c37] text-white gap-2 shadow-sm">
+              {editing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pencil className="w-4 h-4" />}
+              {editing ? "Saving..." : "Save Changes"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1413,20 +1498,27 @@ function EmployeesTab() {
 
       {/* Reset Password Confirm */}
       <AlertDialog open={!!resetTarget} onOpenChange={() => { if (!resetting) setResetTarget(null); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Reset Password</AlertDialogTitle>
-            <AlertDialogDescription>
-              Reset password for <strong>{resetTarget?.employee_name}</strong> to{" "}
-              <code className="bg-slate-100 px-1 rounded font-mono text-sm">Think@2026</code>?{" "}
-              They will be required to change it on next login.
+        <AlertDialogContent className="max-w-sm">
+          <div className="flex justify-center mb-4">
+            <div className="w-14 h-14 rounded-2xl bg-orange-50 border border-orange-100 flex items-center justify-center">
+              <KeyRound className="w-7 h-7 text-orange-500" />
+            </div>
+          </div>
+          <AlertDialogHeader className="mb-0">
+            <AlertDialogTitle className="text-center text-slate-900">Reset Password</AlertDialogTitle>
+            <AlertDialogDescription className="text-center mt-2 leading-relaxed">
+              Reset password for{" "}
+              <span className="font-semibold text-slate-700">{resetTarget?.employee_name}</span>{" "}
+              to{" "}
+              <code className="bg-orange-50 border border-orange-200 text-orange-600 px-1.5 py-0.5 rounded font-mono text-xs">Think@2026</code>?
+              <span className="block mt-1.5 text-slate-400 text-xs">They will be prompted to change it on next login.</span>
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={resetting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction className="bg-orange-600 hover:bg-orange-700" onClick={handleResetPassword} disabled={resetting}>
-              {resetting && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-              Reset Password
+          <AlertDialogFooter className="mt-5 flex-col sm:flex-row gap-2">
+            <AlertDialogCancel onClick={() => setResetTarget(null)} disabled={resetting} className="flex-1">Cancel</AlertDialogCancel>
+            <AlertDialogAction className="flex-1 bg-orange-500 hover:bg-orange-600 gap-2 shadow-sm" onClick={handleResetPassword} disabled={resetting}>
+              {resetting ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
+              {resetting ? "Resetting..." : "Reset Password"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1435,48 +1527,54 @@ function EmployeesTab() {
       {/* Sync Results Dialog */}
       <Dialog open={syncResultOpen} onOpenChange={setSyncResultOpen}>
         <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <CheckCircle2 className="w-5 h-5 text-green-600" />
-              Streamline Sync Complete
-            </DialogTitle>
+          <DialogHeader className="pb-2">
+            <div className="flex items-center gap-3 mb-1">
+              <div className="w-10 h-10 rounded-xl bg-green-50 border border-green-100 flex items-center justify-center shrink-0">
+                <CheckCircle2 className="w-5 h-5 text-green-600" />
+              </div>
+              <div>
+                <DialogTitle className="text-lg font-semibold text-slate-800">Sync Complete</DialogTitle>
+                <DialogDescription className="text-sm text-slate-500 mt-0.5">
+                  Processed <strong className="text-slate-700">{syncResult?.total_resources ?? 0}</strong> records from Streamline360.
+                </DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
           {syncResult && (
-            <div className="space-y-4 py-2">
-              <p className="text-sm text-slate-500">
-                Processed <strong>{syncResult.total_resources}</strong> records from Streamline360 Resource Master
-                (Client → Project → Resource Intimation → Employee).
-              </p>
+            <div className="space-y-4 py-1">
+              {/* Stats grid */}
               <div className="grid grid-cols-2 gap-3">
-                <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
-                  <p className="text-2xl font-bold text-green-700">{syncResult.employees_synced}</p>
-                  <p className="text-xs text-green-600 mt-0.5">Employees synced</p>
+                <div className="bg-green-50 border border-green-100 rounded-xl p-4 text-center">
+                  <p className="text-3xl font-bold text-green-600">{syncResult.employees_synced}</p>
+                  <p className="text-xs font-medium text-green-700 mt-1">Employees synced</p>
                 </div>
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-center">
-                  <p className="text-2xl font-bold text-blue-700">{syncResult.mappings_synced}</p>
-                  <p className="text-xs text-blue-600 mt-0.5">Project mappings synced</p>
+                <div className="bg-[#217346]/5 border border-[#217346]/15 rounded-xl p-4 text-center">
+                  <p className="text-3xl font-bold text-[#217346]">{syncResult.mappings_synced}</p>
+                  <p className="text-xs font-medium text-[#217346] mt-1">Project mappings</p>
                 </div>
               </div>
+              {/* Errors */}
               {syncResult.errors.length > 0 && (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                <div className="bg-red-50 border border-red-100 rounded-xl p-3">
                   <div className="flex items-center gap-2 mb-2">
-                    <AlertCircle className="w-4 h-4 text-red-600" />
-                    <p className="text-sm font-medium text-red-700">{syncResult.errors.length} record{syncResult.errors.length !== 1 ? "s" : ""} skipped</p>
+                    <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+                    <p className="text-sm font-semibold text-red-700">{syncResult.errors.length} record{syncResult.errors.length !== 1 ? "s" : ""} skipped</p>
                   </div>
-                  <ul className="text-xs text-red-600 space-y-1 max-h-32 overflow-y-auto">
+                  <ul className="text-xs text-red-600 space-y-1 max-h-28 overflow-y-auto">
                     {syncResult.errors.map((e, i) => (
                       <li key={i}>• {e.reason} {e.resource_id ? `(ID: ${e.resource_id})` : ""}</li>
                     ))}
                   </ul>
                 </div>
               )}
-              <p className="text-xs text-slate-400">
-                Employees with no matched ThinkSheet manager will appear without a manager assigned — you can assign managers manually from the Mapping tab.
+              <p className="text-xs text-slate-400 bg-slate-50 rounded-lg px-3 py-2 border border-slate-100 leading-relaxed">
+                Login credentials created for each employee. Default password = Employee ID. Employees without a matched manager can be assigned from the Mapping tab.
               </p>
             </div>
           )}
-          <DialogFooter>
-            <Button onClick={() => setSyncResultOpen(false)} className="bg-[#217346] hover:bg-[#185c37] text-white">
+          <DialogFooter className="pt-2">
+            <Button onClick={() => setSyncResultOpen(false)} className="bg-[#217346] hover:bg-[#185c37] text-white gap-2 shadow-sm w-full sm:w-auto">
+              <CheckCircle2 className="w-4 h-4" />
               Done
             </Button>
           </DialogFooter>

@@ -1,4 +1,3 @@
-import { SelectHTMLAttributes, forwardRef } from "react";
 import { clsx } from "clsx";
 
 // ── Minimal Select wrapper ─────────────────────────────────────────────────────
@@ -21,13 +20,16 @@ interface SelectCtx {
   open: boolean;
   setOpen: (o: boolean) => void;
   disabled: boolean;
+  label: string;
+  setLabel: (l: string) => void;
 }
-const Ctx = createContext<SelectCtx>({ value: "", onChange: () => {}, open: false, setOpen: () => {}, disabled: false });
+const Ctx = createContext<SelectCtx>({ value: "", onChange: () => {}, open: false, setOpen: () => {}, disabled: false, label: "", setLabel: () => {} });
 
 export function Select({ value = "", onValueChange, disabled = false, children }: SelectProps) {
   const [open, setOpen] = useState(false);
+  const [label, setLabel] = useState("");
   return (
-    <Ctx.Provider value={{ value, onChange: onValueChange ?? (() => {}), open, setOpen, disabled }}>
+    <Ctx.Provider value={{ value, onChange: onValueChange ?? (() => {}), open, setOpen, disabled, label, setLabel }}>
       <div className="relative">{children}</div>
     </Ctx.Provider>
   );
@@ -54,9 +56,13 @@ export function SelectTrigger({ className, children }: { className?: string; chi
 }
 
 export function SelectValue({ placeholder }: { placeholder?: string }) {
-  const { value } = useContext(Ctx);
-  // The displayed label is injected by SelectContent via a hidden span trick
-  return <span id="select-value-display" className="flex-1 text-left truncate">{value || <span className="text-slate-400">{placeholder}</span>}</span>;
+  const { value, label } = useContext(Ctx);
+  const display = label || value;
+  return (
+    <span className="flex-1 text-left truncate">
+      {display ? display : <span className="text-slate-400">{placeholder}</span>}
+    </span>
+  );
 }
 
 interface SelectContentProps { children?: React.ReactNode }
@@ -73,14 +79,20 @@ export function SelectContent({ children }: SelectContentProps) {
     return () => document.removeEventListener("mousedown", handler);
   }, [open, setOpen]);
 
-  if (!open) return null;
+  // Always render items (hidden when closed) so SelectItem useEffects can sync labels
   return (
-    <div
-      ref={ref}
-      className="absolute z-50 mt-1 w-full rounded-md border border-slate-200 bg-white shadow-lg max-h-56 overflow-auto"
-    >
-      {children}
-    </div>
+    <>
+      {/* Hidden item registry — always mounted so labels can be resolved */}
+      <div className="hidden">{children}</div>
+      {open && (
+        <div
+          ref={ref}
+          className="absolute z-50 mt-1 w-full rounded-md border border-slate-200 bg-white shadow-lg max-h-56 overflow-auto"
+        >
+          {children}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -89,16 +101,31 @@ interface SelectItemProps {
   children?: React.ReactNode;
 }
 export function SelectItem({ value, children }: SelectItemProps) {
-  const { value: selected, onChange, setOpen } = useContext(Ctx);
+  const { value: selected, onChange, setOpen, setLabel } = useContext(Ctx);
   const isSelected = selected === value;
+  const labelText = typeof children === "string" ? children : "";
+
+  // Sync label for pre-selected value (e.g. edit dialogs opening with existing data)
+  useEffect(() => {
+    if (isSelected && labelText) setLabel(labelText);
+  }, [isSelected, labelText]);
+
   return (
     <div
-      onClick={() => { onChange(value); setOpen(false); }}
+      onClick={() => {
+        onChange(value);
+        setLabel(labelText);
+        setOpen(false);
+      }}
       className={clsx(
         "flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-slate-50 transition-colors",
-        isSelected && "bg-slate-100 font-medium"
+        isSelected && "bg-[#217346]/8 text-[#217346] font-medium"
       )}
     >
+      {isSelected && (
+        <svg className="w-3.5 h-3.5 shrink-0 text-[#217346]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7"/></svg>
+      )}
+      {!isSelected && <span className="w-3.5 shrink-0" />}
       {children}
     </div>
   );
