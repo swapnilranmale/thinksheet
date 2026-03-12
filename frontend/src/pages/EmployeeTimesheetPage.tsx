@@ -1,15 +1,8 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback, memo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,17 +23,16 @@ import {
   ChevronLeft,
   ChevronRight,
   FolderOpen,
-  Undo2,
   Pencil,
   AlertTriangle,
   Download,
   FileSpreadsheet,
   FileText,
-  File,
 } from "lucide-react";
 import { toast } from "sonner";
 import { timesheetService, Timesheet, TimesheetEntry, DayStatus } from "@/services/timesheet";
 import { getErrorMessage } from "@/lib/api";
+import { getDaysInMonth, toDateKey, statusRowBg, statusBadgeClass, tableTh, tableTd, tableThTotal } from "@/lib/utils";
 import {
   buildExportRows,
   exportToXLSX,
@@ -82,13 +74,8 @@ type CellEntry = {
 
 type CellsMap = Record<string, CellEntry>; // keyed by "YYYY-MM-DD"
 
-function isWeekend(d: Date) {
-  const dow = d.getDay();
-  return dow === 0 || dow === 6;
-}
-
-function defaultStatus(d: Date): DayStatus {
-  return isWeekend(d) ? "Holiday" : "Working";
+function defaultStatus(_d: Date): DayStatus {
+  return "Working";
 }
 
 function defaultBillable(_status: DayStatus): number {
@@ -141,22 +128,6 @@ function buildCellsFromEntries(entries: TimesheetEntry[], days: Date[]): CellsMa
   return map;
 }
 
-function getDaysInMonth(year: number, month: number): Date[] {
-  const days: Date[] = [];
-  const total = new Date(year, month + 1, 0).getDate();
-  for (let d = 1; d <= total; d++) {
-    days.push(new Date(year, month, d));
-  }
-  return days;
-}
-
-function toDateKey(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
 function isToday(d: Date) {
   const t = new Date();
   return d.getFullYear() === t.getFullYear() &&
@@ -164,26 +135,151 @@ function isToday(d: Date) {
     d.getDate() === t.getDate();
 }
 
-// ── Status colors ──────────────────────────────────────────────────────────────
+// ── Isolated cell components (prevent parent re-render on every keystroke) ─────
 
-function statusRowBg(status: DayStatus, today: boolean): string {
-  if (today) return "bg-amber-50";
-  switch (status) {
-    case "Holiday": return "bg-red-50";
-    case "On leave": return "bg-orange-50";
-    case "Extra Working": return "bg-blue-50";
-    default: return "bg-white";
-  }
-}
+const TaskCell = memo(function TaskCell({
+  value,
+  onCommit,
+}: {
+  value: string;
+  onCommit: (v: string) => void;
+}) {
+  const [local, setLocal] = useState(value);
+  // Sync if parent value changes (e.g. undo/redo)
+  useEffect(() => { setLocal(value); }, [value]);
+  return (
+    <textarea
+      value={local}
+      placeholder="Enter task description..."
+      rows={local ? Math.max(1, local.split("\n").length) : 1}
+      onChange={(e) => setLocal(e.target.value)}
+      onBlur={() => { if (local !== value) onCommit(local); }}
+      className="w-full border-0 bg-transparent focus:bg-white focus:ring-1 focus:ring-blue-400 rounded-sm outline-none px-1 py-0.5 text-xs resize-none placeholder:text-gray-300"
+    />
+  );
+});
 
-function statusBadgeClass(status: DayStatus): string {
-  switch (status) {
-    case "Working": return "bg-green-100 text-green-700 border-green-200";
-    case "Holiday": return "bg-red-100 text-red-600 border-red-200";
-    case "On leave": return "bg-orange-100 text-orange-600 border-orange-200";
-    case "Extra Working": return "bg-blue-100 text-blue-600 border-blue-200";
-    default: return "bg-gray-100 text-gray-600 border-gray-200";
+const BillableCell = memo(function BillableCell({
+  value,
+  onCommit,
+}: {
+  value: number;
+  onCommit: (v: number) => void;
+}) {
+  const [local, setLocal] = useState(String(value));
+  useEffect(() => { setLocal(String(value)); }, [value]);
+  return (
+    <input
+      type="number"
+      min={0}
+      max={24}
+      step={0.5}
+      value={local}
+      onChange={(e) => setLocal(e.target.value)}
+      onBlur={() => {
+        const v = parseFloat(local);
+        const next = isNaN(v) ? 0 : v;
+        if (next !== value) onCommit(next);
+      }}
+      className="w-16 text-center font-mono font-semibold bg-transparent border-0 focus:bg-white focus:ring-1 focus:ring-blue-400 rounded-sm outline-none px-1 py-0.5 text-xs"
+    />
+  );
+});
+
+// ── MonthYearPicker ────────────────────────────────────────────────────────────
+
+const MONTH_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+function MonthYearPicker({
+  month, year, disabled, onChange,
+}: {
+  month: number; year: number; disabled?: boolean;
+  onChange: (month: number, year: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [pickerYear, setPickerYear] = useState(year);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // sync pickerYear when year changes externally
+  useEffect(() => { setPickerYear(year); }, [year]);
+
+  // close on outside click
+  useEffect(() => {
+    if (!open) return;
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  function select(m: number) {
+    onChange(m, pickerYear);
+    setOpen(false);
   }
+
+  const isCurrentMonth = (m: number) => m === month && pickerYear === year;
+  const isToday = (m: number) => m === CURRENT_MONTH && pickerYear === CURRENT_YEAR;
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        disabled={disabled}
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-2 h-10 px-3 rounded-lg border border-input bg-white hover:bg-slate-50 text-sm font-medium shadow-sm transition-colors disabled:opacity-40 min-w-[160px]"
+      >
+        <Calendar className="w-4 h-4 text-[#217346] shrink-0" />
+        <span className="flex-1 text-left">{MONTHS[month]}</span>
+        <span className="text-muted-foreground font-normal">{year}</span>
+        <ChevronRight className={`w-3.5 h-3.5 text-slate-400 transition-transform ${open ? "rotate-90" : ""}`} />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-50 bg-white border rounded-xl shadow-xl p-3 w-[240px]">
+          {/* Year row */}
+          <div className="flex items-center justify-between mb-3">
+            <button
+              onClick={() => setPickerYear(y => y - 1)}
+              className="p-1 rounded hover:bg-slate-100 text-slate-500"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <span className="text-sm font-bold text-slate-800">{pickerYear}</span>
+            <button
+              onClick={() => setPickerYear(y => Math.min(y + 1, CURRENT_YEAR + 1))}
+              disabled={pickerYear >= CURRENT_YEAR + 1}
+              className="p-1 rounded hover:bg-slate-100 text-slate-500 disabled:opacity-30"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+          {/* Month grid */}
+          <div className="grid grid-cols-4 gap-1">
+            {MONTH_SHORT.map((m, idx) => {
+              const active = isCurrentMonth(idx);
+              const today = isToday(idx);
+              return (
+                <button
+                  key={idx}
+                  onClick={() => select(idx)}
+                  className={[
+                    "rounded-lg py-1.5 text-xs font-medium transition-colors",
+                    active
+                      ? "bg-[#217346] text-white shadow-sm"
+                      : today
+                      ? "border border-[#217346] text-[#217346] hover:bg-green-50"
+                      : "hover:bg-slate-100 text-slate-700",
+                  ].join(" ")}
+                >
+                  {m}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── Component ──────────────────────────────────────────────────────────────────
@@ -192,6 +288,7 @@ export default function EmployeeTimesheetPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const projectName = searchParams.get("projectName") ?? "Timesheet";
+  const projectId = searchParams.get("projectId") ?? null;
 
   const [selectedMonth, setSelectedMonth] = useState(CURRENT_MONTH);
   const [selectedYear, setSelectedYear] = useState(CURRENT_YEAR);
@@ -209,8 +306,6 @@ export default function EmployeeTimesheetPage() {
   const [timesheet, setTimesheet] = useState<Timesheet | null>(null);
   const [cells, setCells] = useState<CellsMap>({});
   const cellsRef = useRef<CellsMap>({});
-  const undoStackRef = useRef<CellsMap[]>([]);
-  const [canUndo, setCanUndo] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -223,10 +318,8 @@ export default function EmployeeTimesheetPage() {
     (async () => {
       try {
         setLoading(true);
-        undoStackRef.current = [];
-        setCanUndo(false);
         const apiMonth = selectedMonth + 1;
-        const res = await timesheetService.getOwn(apiMonth, selectedYear);
+        const res = await timesheetService.getOwn(apiMonth, selectedYear, projectId);
         if (cancelled) return;
         setTimesheet(res.data);
         const loaded = buildCellsFromEntries(
@@ -248,7 +341,7 @@ export default function EmployeeTimesheetPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [selectedMonth, selectedYear]);
+  }, [selectedMonth, selectedYear, projectId]);
 
   // ── Derived ───────────────────────────────────────────────────────────────
 
@@ -267,7 +360,7 @@ export default function EmployeeTimesheetPage() {
     return cells[dateKey] ?? emptyCell();
   }
 
-  function patchCell(dateKey: string, patch: Partial<CellEntry>) {
+  const patchCell = useCallback(function patchCell(dateKey: string, patch: Partial<CellEntry>) {
     setCells((prev) => {
       const existing = prev[dateKey] ?? emptyCell();
       const updated = { ...existing, ...patch };
@@ -279,25 +372,11 @@ export default function EmployeeTimesheetPage() {
         updated.worked_hours = newBillable;
       }
 
-      // Push current state to undo stack (limit to 50)
-      undoStackRef.current = [...undoStackRef.current.slice(-49), prev];
-      setCanUndo(true);
-
       const next = { ...prev, [dateKey]: updated };
       cellsRef.current = next;
       return next;
     });
-  }
-
-  function handleUndo() {
-    const stack = undoStackRef.current;
-    if (stack.length === 0) return;
-    const previous = stack[stack.length - 1];
-    undoStackRef.current = stack.slice(0, -1);
-    setCanUndo(undoStackRef.current.length > 0);
-    cellsRef.current = previous;
-    setCells(previous);
-  }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleRecall() {
     if (!timesheet) return;
@@ -305,8 +384,6 @@ export default function EmployeeTimesheetPage() {
     try {
       const res = await timesheetService.recall(timesheet._id);
       setTimesheet(res.data);
-      undoStackRef.current = [];
-      setCanUndo(false);
       toast.success("Timesheet reopened for editing.");
     } catch (err) {
       toast.error(getErrorMessage(err, "Failed to recall timesheet"));
@@ -343,7 +420,7 @@ export default function EmployeeTimesheetPage() {
       const apiMonth = selectedMonth + 1;
       let res;
       if (!timesheet) {
-        res = await timesheetService.create(apiMonth, selectedYear, entries);
+        res = await timesheetService.create(apiMonth, selectedYear, entries, projectId);
       } else {
         res = await timesheetService.update(timesheet._id, entries);
       }
@@ -391,7 +468,7 @@ export default function EmployeeTimesheetPage() {
           setSaving(false);
           return;
         }
-        const saved = await timesheetService.create(apiMonth, selectedYear, entries);
+        const saved = await timesheetService.create(apiMonth, selectedYear, entries, projectId);
         const submitted = await timesheetService.submit(saved.data._id);
         setTimesheet(submitted.data);
         const s1 = buildCellsFromEntries(submitted.data.entries, days);
@@ -442,7 +519,7 @@ export default function EmployeeTimesheetPage() {
       return;
     }
 
-    const totalBillable = rows.reduce((s, r) => s + r.billableHours, 0);
+    const exportTotalBillable = rows.reduce((s, r) => s + r.billableHours, 0);
     const name = decodeURIComponent(projectName);
     const monthLabel = exportFromDate === exportToDate
       ? exportFromDate
@@ -452,7 +529,7 @@ export default function EmployeeTimesheetPage() {
     try {
       if (exportFormat === "xlsx") exportToXLSX(rows, filename);
       else if (exportFormat === "csv") exportToCSV(rows, filename);
-      else exportToPDF(rows, filename, { projectName: name, monthLabel, totalBillable });
+      else exportToPDF(rows, filename, { projectName: name, monthLabel, totalBillable: exportTotalBillable });
       toast.success(`Exported as ${exportFormat.toUpperCase()}`);
       setExportOpen(false);
     } catch {
@@ -484,59 +561,18 @@ export default function EmployeeTimesheetPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {/* Year navigation */}
-            <div className="flex items-center gap-1 border rounded-lg px-1 h-10">
-              <button
-                onClick={() => setSelectedYear(y => y - 1)}
-                disabled={saving}
-                className="p-1.5 rounded hover:bg-slate-100 text-slate-500 disabled:opacity-40"
-                title="Previous year"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <span className="text-sm font-semibold text-slate-700 w-12 text-center select-none">
-                {selectedYear}
-              </span>
-              <button
-                onClick={() => setSelectedYear(y => y + 1)}
-                disabled={saving || selectedYear >= CURRENT_YEAR + 1}
-                className="p-1.5 rounded hover:bg-slate-100 text-slate-500 disabled:opacity-40"
-                title="Next year"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Month selector — not disabled when locked so viewing is always possible */}
-            <Select
-              value={String(selectedMonth)}
-              onValueChange={(v) => setSelectedMonth(Number(v))}
+            {/* Month / Year picker */}
+            <MonthYearPicker
+              month={selectedMonth}
+              year={selectedYear}
               disabled={saving}
-            >
-              <SelectTrigger className="w-40">
-                <div className="flex items-center gap-2">
-                  <Calendar className="w-4 h-4 text-muted-foreground shrink-0" />
-                  <span>{MONTHS[selectedMonth]}</span>
-                </div>
-              </SelectTrigger>
-              <SelectContent searchable>
-                {MONTHS.map((m, idx) => (
-                  <SelectItem key={idx} value={String(idx)}>
-                    {m}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onChange={(m, y) => { setSelectedMonth(m); setSelectedYear(y); }}
+            />
 
-            {isLocked ? (
+            {isLocked && (
               <Badge className="bg-green-100 text-green-700 border border-green-200 gap-1">
                 <CheckCircle2 className="w-3.5 h-3.5" />
                 Submitted
-              </Badge>
-            ) : (
-              <Badge variant="outline" className="gap-1">
-                <Clock className="w-3.5 h-3.5" />
-                Draft
               </Badge>
             )}
 
@@ -706,19 +742,9 @@ export default function EmployeeTimesheetPage() {
                               <span className="text-gray-300">—</span>
                             )
                           ) : (
-                            <textarea
+                            <TaskCell
                               value={cell.tasks}
-                              placeholder={
-                                cell.status === "Holiday" ? "" :
-                                cell.status === "On leave" ? "" :
-                                "Enter task description..."
-                              }
-                              rows={cell.tasks ? Math.max(1, cell.tasks.split("\n").length) : 1}
-                              onChange={(e) => patchCell(dateKey, { tasks: e.target.value, saved: false })}
-                              disabled={cell.status === "Holiday" || cell.status === "On leave"}
-                              className={`w-full border-0 bg-transparent focus:bg-white focus:ring-1 focus:ring-blue-400 rounded-sm outline-none px-1 py-0.5 text-xs resize-none placeholder:text-gray-300 ${
-                                cell.status === "Holiday" || cell.status === "On leave" ? "opacity-40 cursor-not-allowed" : ""
-                              }`}
+                              onCommit={(v) => patchCell(dateKey, { tasks: v, saved: false })}
                             />
                           )}
                         </td>
@@ -732,24 +758,13 @@ export default function EmployeeTimesheetPage() {
                               {cell.billable_hours}
                             </span>
                           ) : (
-                            <input
-                              type="number"
-                              min={0}
-                              max={24}
-                              step={0.5}
-                              value={cell.billable_hours === 0 ? "0" : cell.billable_hours}
-                              onChange={(e) => {
-                                const v = parseFloat(e.target.value);
-                                patchCell(dateKey, {
-                                  billable_hours: isNaN(v) ? 0 : v,
-                                  worked_hours: isNaN(v) ? 0 : v,
-                                  saved: false,
-                                });
-                              }}
-                              disabled={cell.status === "Holiday" || cell.status === "On leave"}
-                              className={`w-16 text-center font-mono font-semibold bg-transparent border-0 focus:bg-white focus:ring-1 focus:ring-blue-400 rounded-sm outline-none px-1 py-0.5 text-xs ${
-                                cell.status === "Holiday" || cell.status === "On leave" ? "opacity-40 cursor-not-allowed" : ""
-                              }`}
+                            <BillableCell
+                              value={cell.billable_hours}
+                              onCommit={(v) => patchCell(dateKey, {
+                                billable_hours: v,
+                                worked_hours: v,
+                                saved: false,
+                              })}
                             />
                           )}
                         </td>
@@ -763,7 +778,7 @@ export default function EmployeeTimesheetPage() {
                     style={{ borderTop: "2px solid #185c37" }}
                   >
                     <td style={thTotal} colSpan={5} className="text-right pr-4 uppercase tracking-wider text-[11px]">
-                      Total Worked Hours
+                      Total Billable Hours
                     </td>
                     <td style={thTotal} className="text-center font-mono text-sm">
                       {totalBillable}
@@ -787,17 +802,6 @@ export default function EmployeeTimesheetPage() {
             {workingEntries.length === 1 ? "day" : "days"} &middot; {totalBillable}h billable
           </p>
           <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleUndo}
-            disabled={!canUndo || saving}
-            className="gap-1.5 text-muted-foreground"
-            title="Undo last change"
-          >
-            <Undo2 className="w-4 h-4" />
-            Undo
-          </Button>
-          <Button
             variant="outline"
             size="sm"
             onClick={handleSaveDraft}
@@ -809,7 +813,7 @@ export default function EmployeeTimesheetPage() {
             ) : (
               <Save className="w-4 h-4" />
             )}
-            Save Draft
+            Save
           </Button>
           <Button
             size="sm"
@@ -949,23 +953,7 @@ export default function EmployeeTimesheetPage() {
   );
 }
 
-// ── Style helpers ──────────────────────────────────────────────────────────────
-
-const th: React.CSSProperties = {
-  border: "1px solid #1a5c38",
-  padding: "8px 10px",
-  fontWeight: 600,
-  whiteSpace: "nowrap",
-};
-
-const td: React.CSSProperties = {
-  border: "1px solid #d1d5db",
-  padding: "4px 8px",
-  verticalAlign: "middle",
-};
-
-const thTotal: React.CSSProperties = {
-  border: "1px solid #1a5c38",
-  padding: "8px 10px",
-  fontWeight: 700,
-};
+// ── Style aliases (from shared utils) ────────────────────────────────────────
+const th = tableTh;
+const td = tableTd;
+const thTotal = tableThTotal;

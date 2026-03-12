@@ -25,12 +25,13 @@ async function getEmployeeForUser(user) {
     }).lean();
 }
 
-// ─── GET /api/timesheet?month=3&year=2026 — employee's own timesheet ────────
+// ─── GET /api/timesheet?month=3&year=2026&projectId=xxx — employee's own timesheet ────────
 router.get('/', ...auth, authorize(['EMPLOYEE']), async (req, res) => {
     try {
         const tenantId = req.tenantIdString;
         const month = parseInt(req.query.month);
         const year = parseInt(req.query.year);
+        const projectId = req.query.projectId || null;
 
         if (!month || !year || month < 1 || month > 12 || year < 2000 || year > 2100) {
             return res.status(400).json({ error: 'Valid month (1-12) and year (2000-2100) are required' });
@@ -41,12 +42,23 @@ router.get('/', ...auth, authorize(['EMPLOYEE']), async (req, res) => {
             return res.status(404).json({ error: 'Employee record not found for this user' });
         }
 
-        const timesheet = await Timesheet.findOne({
+        let projectObjectId = null;
+        if (projectId) {
+            if (!mongoose.Types.ObjectId.isValid(projectId)) {
+                return res.status(400).json({ error: 'Invalid projectId' });
+            }
+            projectObjectId = new mongoose.Types.ObjectId(projectId);
+        }
+
+        const query = {
             tenant_id: tenantId,
             user_id: req.user._id,
             month,
-            year
-        }).lean();
+            year,
+            project_id: projectObjectId
+        };
+
+        const timesheet = await Timesheet.findOne(query).lean();
 
         res.json({
             success: true,
@@ -64,11 +76,75 @@ router.get('/', ...auth, authorize(['EMPLOYEE']), async (req, res) => {
     }
 });
 
+// ─── GET /api/timesheet/my-stats — employee dashboard stats ─────────────────
+router.get('/my-stats', ...auth, authorize(['EMPLOYEE']), async (req, res) => {
+    try {
+        const tenantId = req.tenantIdString;
+        const now = new Date();
+        const currentMonth = now.getMonth() + 1;
+        const currentYear = now.getFullYear();
+
+        // Use same internal lookup as /my-projects: find employee by official_email, then get assigned mappings
+        // We replicate the exact logic from employeeMapping.js /my-projects to guarantee consistency
+        const empForMapping = await Employee.findOne({
+            tenant_id: tenantId,
+            official_email: req.user.email,
+            is_active: true
+        }).sort({ createdAt: 1 }).lean(); // sort ascending — same first record as my-projects
+        const assignedMappings = empForMapping
+            ? await EmployeeManagerMapping.find({
+                tenant_id: tenantId,
+                employee_id: empForMapping._id,
+                is_deleted: { $ne: true },
+                is_active: true
+            }).lean()
+            : [];
+        const totalProjects = assignedMappings.length;
+
+        // Single-pass aggregation over all timesheets
+        const all = await Timesheet.find({ tenant_id: tenantId, user_id: req.user._id }).lean();
+
+        let submitted = 0, drafts = 0;
+        let currentBillable = 0, currentWorking = 0, totalBillable = 0;
+
+        for (const t of all) {
+            if (t.status === 'submitted') submitted++;
+            else if (t.status === 'draft') drafts++;
+
+            const isCurrent = t.month === currentMonth && t.year === currentYear;
+            for (const e of t.entries) {
+                const bh = e.billable_hours || 0;
+                totalBillable += bh;
+                if (isCurrent) {
+                    currentBillable += bh;
+                    if (e.status === 'Working') currentWorking++;
+                }
+            }
+        }
+
+        res.json({
+            success: true,
+            data: {
+                totalProjects,
+                submitted,
+                drafts,
+                currentBillable,
+                currentWorking,
+                totalBillable,
+                currentMonth,
+                currentYear,
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ error: 'Server error', message: err.message });
+    }
+});
+
 // ─── POST /api/timesheet — create new timesheet (draft) ─────────────────────
 router.post('/', ...auth, authorize(['EMPLOYEE']), async (req, res) => {
     try {
         const tenantId = req.tenantIdString;
-        const { month, year, entries } = req.body;
+        const { month, year, entries, project_id } = req.body;
 
         if (!month || !year) {
             return res.status(400).json({ error: 'month and year are required' });
@@ -79,9 +155,12 @@ router.post('/', ...auth, authorize(['EMPLOYEE']), async (req, res) => {
             return res.status(404).json({ error: 'Employee record not found for this user' });
         }
 
+        const projectObjectId = project_id ? new mongoose.Types.ObjectId(project_id) : null;
+
         const existing = await Timesheet.findOne({
             tenant_id: tenantId,
             user_id: req.user._id,
+            project_id: projectObjectId,
             month,
             year
         });
@@ -93,6 +172,7 @@ router.post('/', ...auth, authorize(['EMPLOYEE']), async (req, res) => {
             tenant_id: tenantId,
             employee_id: employee._id,
             user_id: req.user._id,
+            project_id: projectObjectId,
             month,
             year,
             entries: entries || [],

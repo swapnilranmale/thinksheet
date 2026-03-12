@@ -33,6 +33,11 @@ const timesheetSchema = new mongoose.Schema({
         ref: 'User',
         required: true
     },
+    project_id: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Project',
+        default: null
+    },
     month: {
         type: Number,
         required: true,
@@ -57,9 +62,9 @@ const timesheetSchema = new mongoose.Schema({
     timestamps: true
 });
 
-// One timesheet per employee per month/year per tenant
+// One timesheet per employee per project per month/year per tenant
 timesheetSchema.index(
-    { user_id: 1, month: 1, year: 1, tenant_id: 1 },
+    { user_id: 1, project_id: 1, month: 1, year: 1, tenant_id: 1 },
     { unique: true }
 );
 timesheetSchema.index({ tenant_id: 1, employee_id: 1 });

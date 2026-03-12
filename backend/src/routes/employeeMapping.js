@@ -90,7 +90,7 @@ router.get('/my-projects', authenticate, checkActive, authorize(['EMPLOYEE']), a
             tenant_id: tenantId,
             official_email: req.user.email,
             is_active: true
-        }).lean();
+        }).sort({ createdAt: 1 }).lean();
 
         if (!employee) {
             return res.status(404).json({ error: 'Employee record not found' });

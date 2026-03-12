@@ -153,16 +153,17 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             <SidebarLink
               to="/dashboard"
               icon={LayoutDashboard}
-              label="My Projects"
+              label="Dashboard"
               onClick={() => handleNavClick("/dashboard")}
               exact
               collapsed={collapsed}
             />
             <SidebarLink
-              to="/timesheet/employee"
-              icon={Clock}
-              label="Timesheet"
-              onClick={() => handleNavClick("/timesheet/employee")}
+              to="/dashboard/projects"
+              icon={FolderOpen}
+              label="My Projects"
+              onClick={() => handleNavClick("/dashboard/projects")}
+              exact
               collapsed={collapsed}
             />
           </div>
@@ -176,18 +177,19 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
               </p>
             )}
             <SidebarLink
-              to="/projects"
+              to="/workspace?tab=projects"
               icon={FolderOpen}
               label="My Projects"
-              onClick={() => handleNavClick("/projects")}
+              onClick={() => handleNavClick("/workspace?tab=projects")}
               exact={false}
               collapsed={collapsed}
             />
             <SidebarLink
-              to="/employees/manage"
+              to="/workspace?tab=employees"
               icon={Users}
               label="My Employees"
-              onClick={() => handleNavClick("/employees/manage")}
+              onClick={() => handleNavClick("/workspace?tab=employees")}
+              exact={false}
               collapsed={collapsed}
             />
           </div>

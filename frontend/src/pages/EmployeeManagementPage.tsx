@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -55,15 +55,7 @@ import {
 } from "@/services/timesheet";
 import { authService } from "@/lib/auth";
 import { useAuth } from "@/contexts/AuthContext";
-
-function getInitials(name: string) {
-  return name.split(" ").slice(0, 2).map(n => n[0]).join("").toUpperCase();
-}
-
-function formatDate(iso: string | null) {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-}
+import { getInitials, fmtDate as formatDate } from "@/lib/utils";
 
 // ── Field error helper ────────────────────────────────────────────────────────
 
@@ -77,6 +69,7 @@ function FieldError({ msg }: { msg?: string }) {
 function ProjectsTab({ onProjectClick }: { onProjectClick: (proj: ResourceMasterProject) => void }) {
   const [projects, setProjects] = useState<ResourceMasterProject[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     streamlineService.getMyResourceProjects()
@@ -85,11 +78,21 @@ function ProjectsTab({ onProjectClick }: { onProjectClick: (proj: ResourceMaster
       .finally(() => setLoading(false));
   }, []);
 
+  const filtered = useMemo(() => {
+    if (!searchQuery.trim()) return projects;
+    const q = searchQuery.toLowerCase();
+    return projects.filter(p =>
+      p.project_name?.toLowerCase().includes(q) ||
+      p.project_code?.toLowerCase().includes(q) ||
+      p.client_name?.toLowerCase().includes(q)
+    );
+  }, [projects, searchQuery]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16 text-slate-400 gap-2">
         <Loader2 className="w-5 h-5 animate-spin" />
-        <span>Loading projects from Streamline360...</span>
+        <span>Loading projects...</span>
       </div>
     );
   }
@@ -106,15 +109,32 @@ function ProjectsTab({ onProjectClick }: { onProjectClick: (proj: ResourceMaster
 
   return (
     <div>
-      <p className="text-sm text-slate-500 mb-6 font-medium">
-        <span className="bg-[#217346]/10 text-[#217346] px-3 py-1 rounded-full inline-block font-semibold">
-          {projects.length} project{projects.length !== 1 ? "s" : ""}
-        </span>
-        <span className="ml-2 text-slate-400">live from Streamline360 Resource Master</span>
-      </p>
+      {/* Toolbar */}
+      <div className="flex items-center gap-3 mb-6">
+        <div className="relative flex-1 max-w-xs">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Search projects…"
+            className="w-full h-10 pl-9 pr-4 rounded-lg border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#217346]/50 focus:border-[#217346] transition-all duration-200 hover:border-slate-400"
+          />
+        </div>
+        <p className="text-sm text-slate-500 whitespace-nowrap font-medium bg-slate-50 px-3 py-2 rounded-lg border border-slate-200">
+          {filtered.length} project{filtered.length !== 1 ? "s" : ""}
+        </p>
+      </div>
 
+      {filtered.length === 0 ? (
+        <div className="border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center py-16 text-slate-400">
+          <FolderOpen className="w-10 h-10 mb-3 opacity-30" />
+          <p className="font-medium text-slate-600">No projects match your search</p>
+          <p className="text-sm mt-1">Try a different search term</p>
+        </div>
+      ) : (
       <div className="space-y-3.5">
-        {projects.map((proj, index) => (
+        {filtered.map((proj, index) => (
           <div
             key={proj.project_id}
             className="bg-white border border-slate-200 rounded-xl overflow-hidden hover:border-[#217346]/30 hover:shadow-lg hover:shadow-[#217346]/10 transition-all duration-300 group animate-slide-up"
@@ -164,6 +184,7 @@ function ProjectsTab({ onProjectClick }: { onProjectClick: (proj: ResourceMaster
           </div>
         ))}
       </div>
+      )}
     </div>
   );
 }
@@ -228,10 +249,17 @@ type Tab = "employees" | "projects";
 export default function EmployeeManagementPage() {
   useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const tabParam = searchParams.get("tab");
   const [activeTab, setActiveTab] = useState<Tab>(
-    location.pathname === "/projects" ? "projects" : "employees"
+    tabParam === "employees" ? "employees" : "projects"
   );
+
+  // Sync tab when URL search param changes (e.g. sidebar click)
+  useEffect(() => {
+    const t = searchParams.get("tab");
+    setActiveTab(t === "employees" ? "employees" : "projects");
+  }, [searchParams]);
   const [employees, setEmployees] = useState<EmployeeMaster[]>([]);
   const [teams, setTeams] = useState<StreamlineTeam[]>([]);
   const [loading, setLoading] = useState(true);
@@ -288,8 +316,8 @@ export default function EmployeeManagementPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Filtered employee list ──────────────────────────────────────────────────
-  const filtered = employees
+  // ── Filtered employee list — memoised ──────────────────────────────────────
+  const filtered = useMemo(() => employees
     .filter(e => filterTeamId === "all" || e.team_id === filterTeamId)
     .filter(e => {
       if (!searchQuery.trim()) return true;
@@ -300,7 +328,7 @@ export default function EmployeeManagementPage() {
         e.unique_id.toLowerCase().includes(q) ||
         (e.designation || "").toLowerCase().includes(q)
       );
-    });
+    }), [employees, filterTeamId, searchQuery]);
 
   // ── Create ─────────────────────────────────────────────────────────────────
   function openCreateDialog() {
@@ -426,21 +454,7 @@ export default function EmployeeManagementPage() {
         {/* Tabs with enhanced styling and animations */}
         <div className="flex gap-2 mb-8 animate-slide-up" style={{ animationDelay: "0.1s" }}>
           <button
-            onClick={() => setActiveTab("employees")}
-            className={`flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all duration-300 relative group ${
-              activeTab === "employees"
-                ? "bg-white text-[#217346] shadow-lg shadow-[#217346]/20 border border-[#217346]/20"
-                : "text-slate-500 hover:text-slate-700 bg-slate-50 hover:bg-white border border-transparent hover:border-slate-200"
-            }`}
-          >
-            <Users className={`w-4 h-4 transition-transform duration-300 ${activeTab === "employees" ? "scale-110" : "group-hover:scale-105"}`} />
-            My Employees
-            {activeTab === "employees" && (
-              <div className="absolute bottom-0 left-0 right-0 h-1 bg-[#217346] rounded-full animate-slide-up" />
-            )}
-          </button>
-          <button
-            onClick={() => setActiveTab("projects")}
+            onClick={() => navigate("/workspace?tab=projects")}
             className={`flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all duration-300 relative group ${
               activeTab === "projects"
                 ? "bg-white text-[#217346] shadow-lg shadow-[#217346]/20 border border-[#217346]/20"
@@ -450,6 +464,20 @@ export default function EmployeeManagementPage() {
             <FolderOpen className={`w-4 h-4 transition-transform duration-300 ${activeTab === "projects" ? "scale-110" : "group-hover:scale-105"}`} />
             My Projects
             {activeTab === "projects" && (
+              <div className="absolute bottom-0 left-0 right-0 h-1 bg-[#217346] rounded-full animate-slide-up" />
+            )}
+          </button>
+          <button
+            onClick={() => navigate("/workspace?tab=employees")}
+            className={`flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all duration-300 relative group ${
+              activeTab === "employees"
+                ? "bg-white text-[#217346] shadow-lg shadow-[#217346]/20 border border-[#217346]/20"
+                : "text-slate-500 hover:text-slate-700 bg-slate-50 hover:bg-white border border-transparent hover:border-slate-200"
+            }`}
+          >
+            <Users className={`w-4 h-4 transition-transform duration-300 ${activeTab === "employees" ? "scale-110" : "group-hover:scale-105"}`} />
+            My Employees
+            {activeTab === "employees" && (
               <div className="absolute bottom-0 left-0 right-0 h-1 bg-[#217346] rounded-full animate-slide-up" />
             )}
           </button>

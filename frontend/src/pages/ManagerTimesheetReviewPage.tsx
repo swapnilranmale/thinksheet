@@ -1,5 +1,6 @@
 import { getErrorMessage } from "@/lib/api";
-import { useState, useEffect } from "react";
+import { getInitials, avatarColor, fmtDate } from "@/lib/utils";
+import { useState, useEffect, useMemo } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -31,7 +32,6 @@ import {
   ResourceMasterProject,
   ProjectTeamMember,
   Timesheet,
-  EmployeeMaster,
 } from "@/services/timesheet";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -44,23 +44,6 @@ const MONTHS = [
 const NOW = new Date();
 const CURRENT_YEAR = NOW.getFullYear();
 const CURRENT_MONTH = NOW.getMonth();
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function getInitials(name: string) {
-  return name.split(" ").slice(0, 2).map((n) => n[0]).join("").toUpperCase();
-}
-
-function avatarColor(name: string) {
-  const colors = [
-    "bg-blue-100 text-blue-700", "bg-green-100 text-green-700",
-    "bg-purple-100 text-purple-700", "bg-orange-100 text-orange-700",
-    "bg-pink-100 text-pink-700", "bg-teal-100 text-teal-700",
-  ];
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % colors.length;
-  return colors[h];
-}
 
 // ── Status badge ──────────────────────────────────────────────────────────────
 
@@ -103,7 +86,6 @@ export default function ManagerTimesheetReviewPage() {
 
   const [viewingMember, setViewingMember] = useState<ProjectTeamMember | null>(null);
   const [viewingTimesheet, setViewingTimesheet] = useState<Timesheet | null>(null);
-  const [viewingEmployee, setViewingEmployee] = useState<EmployeeMaster | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
   // ── Load clients ─────────────────────────────────────────────────────────
@@ -164,7 +146,6 @@ export default function ManagerTimesheetReviewPage() {
         member.employee_id, selectedMonth + 1, selectedYear
       );
       setViewingTimesheet(res.data);
-      setViewingEmployee(res.employee);
     } catch (err) {
       toast.error(getErrorMessage(err, "Failed to load timesheet"));
       setView("resources");
@@ -472,13 +453,22 @@ export default function ManagerTimesheetReviewPage() {
   // VIEW 4: Individual timesheet detail
   // ════════════════════════════════════════════════════════════════════════════
 
-  if (view === "timesheet" && viewingMember) {
+  // Memoised timesheet computations — only recalculate when viewingTimesheet changes
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const timesheetStats = useMemo(() => {
     const entries = [...(viewingTimesheet?.entries ?? [])].sort((a, b) => a.date.localeCompare(b.date));
-    const totalWorked   = entries.reduce((s, e) => s + (e.worked_hours   || 0), 0);
-    const totalBillable = entries.reduce((s, e) => s + (e.billable_hours || 0), 0);
-    const totalActual   = entries.reduce((s, e) => s + (e.actual_hours   || 0), 0);
-    const completed     = entries.filter((e) => e.completed_task).length;
-    const unplanned     = entries.filter((e) => e.unplanned_task).length;
+    return {
+      entries,
+      totalWorked:   entries.reduce((s, e) => s + (e.worked_hours   || 0), 0),
+      totalBillable: entries.reduce((s, e) => s + (e.billable_hours || 0), 0),
+      totalActual:   entries.reduce((s, e) => s + (e.actual_hours   || 0), 0),
+      completed:     entries.filter((e) => e.completed_task).length,
+      unplanned:     entries.filter((e) => e.unplanned_task).length,
+    };
+  }, [viewingTimesheet]);
+
+  if (view === "timesheet" && viewingMember) {
+    const { entries, totalWorked, totalBillable, totalActual, completed, unplanned } = timesheetStats;
 
     return (
       <DashboardLayout>

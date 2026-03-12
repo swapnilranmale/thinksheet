@@ -129,16 +129,17 @@ export interface EmployeeMaster {
 
 export const timesheetService = {
   /** Get own timesheet for a month — returns { data: Timesheet|null, employee } */
-  getOwn: async (month: number, year: number) => {
+  getOwn: async (month: number, year: number, projectId?: string | null) => {
+    const qs = projectId ? `&projectId=${projectId}` : '';
     const res = await api.get<{ success: boolean; data: Timesheet | null; employee: EmployeeInfo }>(
-      `/timesheet?month=${month}&year=${year}`
+      `/timesheet?month=${month}&year=${year}${qs}`
     );
     return res.data; // { data, employee }
   },
 
   /** Create new draft timesheet */
-  create: async (month: number, year: number, entries: Omit<TimesheetEntry, '_id'>[]) => {
-    const res = await api.post<{ success: boolean; data: Timesheet }>('/timesheet', { month, year, entries });
+  create: async (month: number, year: number, entries: Omit<TimesheetEntry, '_id'>[], projectId?: string | null) => {
+    const res = await api.post<{ success: boolean; data: Timesheet }>('/timesheet', { month, year, entries, project_id: projectId ?? null });
     return res.data; // { data }
   },
 
@@ -183,9 +184,24 @@ export const managerTimesheetService = {
 
 // ── Employee: My Projects API ──────────────────────────────────────────────────
 
+export type EmployeeStats = {
+  totalProjects: number;
+  submitted: number;
+  drafts: number;
+  currentBillable: number;
+  currentWorking: number;
+  totalBillable: number;
+  currentMonth: number;
+  currentYear: number;
+};
+
 export const employeeProjectService = {
   getMyProjects: async () => {
     const res = await api.get<{ success: boolean; data: EmployeeProject[] }>('/employee-mapping/my-projects');
+    return res.data;
+  },
+  getMyStats: async () => {
+    const res = await api.get<{ success: boolean; data: EmployeeStats }>('/timesheet/my-stats');
     return res.data;
   },
 };

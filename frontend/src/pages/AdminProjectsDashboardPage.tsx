@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useSearchParams, useNavigate, useLocation } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Badge } from "@/components/ui/badge";
@@ -25,6 +25,8 @@ import {
   Timesheet,
 } from "@/services/timesheet";
 import { clsx } from "clsx";
+import { getInitials, fmtDate, statusRowBg, statusBadgeClass, getDaysInMonth, toDateKey } from "@/lib/utils";
+import type { DayStatus } from "@/services/timesheet";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -34,51 +36,6 @@ const MONTHS = [
 ];
 const MONTH_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function getInitials(name: string) {
-  return name.split(" ").slice(0, 2).map(n => n[0]).join("").toUpperCase();
-}
-
-function fmtDate(iso: string | null) {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-}
-
-function getDaysInMonth(year: number, month: number): Date[] {
-  // month is 1-based
-  const days: Date[] = [];
-  const total = new Date(year, month, 0).getDate();
-  for (let d = 1; d <= total; d++) days.push(new Date(year, month - 1, d));
-  return days;
-}
-
-function toDateKey(d: Date) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-type DayStatus = "Working" | "On leave" | "Holiday" | "Extra Working";
-
-function statusRowBg(status: DayStatus, today: boolean): string {
-  if (today) return "bg-amber-50";
-  switch (status) {
-    case "Holiday": return "bg-red-50";
-    case "On leave": return "bg-orange-50";
-    case "Extra Working": return "bg-blue-50";
-    default: return "";
-  }
-}
-
-function statusBadgeClass(status: DayStatus): string {
-  switch (status) {
-    case "Working": return "bg-green-100 text-green-700 border-green-200";
-    case "Holiday": return "bg-red-100 text-red-600 border-red-200";
-    case "On leave": return "bg-orange-100 text-orange-600 border-orange-200";
-    case "Extra Working": return "bg-blue-100 text-blue-600 border-blue-200";
-    default: return "bg-slate-100 text-slate-600 border-slate-200";
-  }
-}
 
 function isToday(d: Date) {
   const t = new Date();
@@ -461,10 +418,13 @@ interface ProjectSectionProps {
 }
 
 function ProjectSection({ pd, month, year, onViewEmployee }: ProjectSectionProps) {
-  const submitted  = pd.team.filter(m => m.status === "submitted").length;
-  const inProgress = pd.team.filter(m => m.status === "draft").length;
-  const notStarted = pd.team.filter(m => m.status === "not_started").length;
-  const total = pd.team.length;
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const { submitted, inProgress, notStarted, total } = useMemo(() => ({
+    submitted:  pd.team.filter(m => m.status === "submitted").length,
+    inProgress: pd.team.filter(m => m.status === "draft").length,
+    notStarted: pd.team.filter(m => m.status === "not_started").length,
+    total: pd.team.length,
+  }), [pd.team]);
 
   const projectName = pd.projectInfo?.project_name || pd.meta?.project_name || pd.projectId;
   const projectCode = pd.projectInfo?.project_code || pd.meta?.project_code || "";
@@ -672,11 +632,16 @@ export default function AdminProjectsDashboardPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [month, year, projectIdsParam]);
 
-  const allTeam = projects.flatMap(p => p.team);
-  const totalSubmitted  = allTeam.filter(m => m.status === "submitted").length;
-  const totalInProgress = allTeam.filter(m => m.status === "draft").length;
-  const totalNotStarted = allTeam.filter(m => m.status === "not_started").length;
-  const anyLoading = projects.some(p => p.loading);
+  const { allTeam, totalSubmitted, totalInProgress, totalNotStarted, anyLoading } = useMemo(() => {
+    const allTeam = projects.flatMap(p => p.team);
+    return {
+      allTeam,
+      totalSubmitted:  allTeam.filter(m => m.status === "submitted").length,
+      totalInProgress: allTeam.filter(m => m.status === "draft").length,
+      totalNotStarted: allTeam.filter(m => m.status === "not_started").length,
+      anyLoading: projects.some(p => p.loading),
+    };
+  }, [projects]);
 
   if (projectIds.length === 0) {
     return (

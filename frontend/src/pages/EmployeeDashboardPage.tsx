@@ -1,29 +1,33 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { Loader2, FolderOpen, ChevronRight, User, Calendar } from "lucide-react";
+import {
+  Loader2, Calendar, CheckCircle2, Briefcase, TrendingUp, FileText,
+} from "lucide-react";
 import { toast } from "sonner";
-import { employeeProjectService, EmployeeProject } from "@/services/timesheet";
+import { employeeProjectService, EmployeeStats } from "@/services/timesheet";
 import { useAuth } from "@/contexts/AuthContext";
 import { getErrorMessage } from "@/lib/api";
 
+const MONTHS = [
+  "January","February","March","April","May","June",
+  "July","August","September","October","November","December",
+];
+
 const NOW = new Date();
-const CURRENT_MONTH_LABEL = NOW.toLocaleDateString("en-IN", { month: "long", year: "numeric" });
 
 export default function EmployeeDashboardPage() {
   const { user } = useAuth();
-  const navigate = useNavigate();
-  const [projects, setProjects] = useState<EmployeeProject[]>([]);
+  const [stats, setStats] = useState<EmployeeStats | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await employeeProjectService.getMyProjects();
-        if (!cancelled) setProjects(res.data);
+        const statsRes = await employeeProjectService.getMyStats();
+        if (!cancelled) setStats(statsRes.data);
       } catch (err) {
-        if (!cancelled) toast.error(getErrorMessage(err, "Failed to load projects"));
+        if (!cancelled) toast.error(getErrorMessage(err, "Failed to load dashboard"));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -31,83 +35,103 @@ export default function EmployeeDashboardPage() {
     return () => { cancelled = true; };
   }, []);
 
-  function openTimesheet(project: EmployeeProject) {
-    navigate(`/timesheet/employee?projectId=${project.project_id}&projectName=${encodeURIComponent(project.project_name)}`);
-  }
+  const monthLabel = MONTHS[NOW.getMonth()] + " " + NOW.getFullYear();
 
   return (
     <DashboardLayout>
-      <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="mb-8">
-          <p className="text-sm text-slate-500 font-medium uppercase tracking-wider mb-1">Welcome back</p>
+      <div className="max-w-5xl mx-auto space-y-6">
+
+        {/* ── Header ── */}
+        <div>
+          <p className="text-xs text-slate-400 font-semibold uppercase tracking-widest mb-1">Welcome back</p>
           <h1 className="text-3xl font-bold text-slate-900">{user?.full_name}</h1>
-          <p className="text-slate-500 mt-1 flex items-center gap-1.5">
+          <p className="text-slate-500 mt-1 flex items-center gap-1.5 text-sm">
             <Calendar className="w-4 h-4" />
-            {CURRENT_MONTH_LABEL} · Select a project to fill your timesheet
+            {monthLabel}
           </p>
         </div>
 
-        {/* Project list */}
+        {/* ── KPI Cards ── */}
         {loading ? (
-          <div className="flex items-center justify-center py-24 text-slate-400 gap-2">
-            <Loader2 className="w-5 h-5 animate-spin" />
-            <span>Loading your projects...</span>
-          </div>
-        ) : projects.length === 0 ? (
-          <div className="border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center py-20 text-slate-400">
-            <FolderOpen className="w-12 h-12 mb-4 opacity-40" />
-            <p className="font-semibold text-slate-600">No projects assigned</p>
-            <p className="text-sm mt-1">Ask your administrator to map you to a project</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <p className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-4">
-              Your Projects ({projects.length})
-            </p>
-            {projects.map((project) => (
-              <button
-                key={project.mapping_id}
-                onClick={() => openTimesheet(project)}
-                className="w-full group bg-white border border-slate-200 rounded-xl px-6 py-5 flex items-center gap-5 hover:border-[#217346] hover:shadow-md transition-all text-left"
-              >
-                {/* Icon */}
-                <div className="w-12 h-12 rounded-xl bg-[#217346]/10 flex items-center justify-center shrink-0 group-hover:bg-[#217346]/20 transition-colors">
-                  <FolderOpen className="w-6 h-6 text-[#217346]" />
-                </div>
-
-                {/* Info */}
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-slate-900 text-base leading-tight truncate">
-                    {project.project_name}
-                  </p>
-                  <div className="flex items-center gap-3 mt-1">
-                    {project.project_code && (
-                      <span className="text-xs font-mono bg-slate-100 text-slate-500 px-2 py-0.5 rounded">
-                        {project.project_code}
-                      </span>
-                    )}
-                    {project.manager && (
-                      <span className="text-xs text-slate-400 flex items-center gap-1">
-                        <User className="w-3 h-3" />
-                        {project.manager.full_name}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* CTA */}
-                <div className="flex items-center gap-2 shrink-0">
-                  <span className="text-sm font-medium text-[#217346] opacity-0 group-hover:opacity-100 transition-opacity">
-                    Open Timesheet
-                  </span>
-                  <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-[#217346] transition-colors" />
-                </div>
-              </button>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="bg-white border rounded-xl p-4 h-24 animate-pulse bg-slate-50" />
             ))}
+          </div>
+        ) : stats ? (
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <KpiCard
+                icon={<Briefcase className="w-5 h-5 text-[#217346]" />}
+                label="Total Projects"
+                value={stats.totalProjects}
+                bg="bg-green-50"
+              />
+              <KpiCard
+                icon={<TrendingUp className="w-5 h-5 text-blue-600" />}
+                label={`${MONTHS[stats.currentMonth - 1]} Billable`}
+                value={`${stats.currentBillable}h`}
+                bg="bg-blue-50"
+              />
+              <KpiCard
+                icon={<CheckCircle2 className="w-5 h-5 text-emerald-600" />}
+                label="Submitted"
+                value={stats.submitted}
+                bg="bg-emerald-50"
+              />
+              <KpiCard
+                icon={<FileText className="w-5 h-5 text-amber-600" />}
+                label="Drafts"
+                value={stats.drafts}
+                bg="bg-amber-50"
+              />
+            </div>
+
+            {/* ── Summary row ── */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-white border rounded-xl p-5">
+                <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-1">
+                  {MONTHS[stats.currentMonth - 1]} Working Days
+                </p>
+                <p className="text-3xl font-bold text-slate-800">{stats.currentWorking}</p>
+                <p className="text-xs text-slate-400 mt-1">days with Working status</p>
+              </div>
+              <div className="bg-white border rounded-xl p-5">
+                <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-1">
+                  Total Billable (All Time)
+                </p>
+                <p className="text-3xl font-bold text-slate-800">{stats.totalBillable}h</p>
+                <p className="text-xs text-slate-400 mt-1">across all projects</p>
+              </div>
+            </div>
+          </>
+        ) : null}
+
+        {loading && (
+          <div className="flex items-center justify-center py-16 text-slate-400 gap-2">
+            <Loader2 className="w-5 h-5 animate-spin" />
           </div>
         )}
       </div>
     </DashboardLayout>
+  );
+}
+
+function KpiCard({ icon, label, value, bg }: {
+  icon: React.ReactNode;
+  label: string;
+  value: number | string;
+  bg: string;
+}) {
+  return (
+    <div className="bg-white border rounded-xl p-4 flex items-start gap-3">
+      <div className={`w-9 h-9 rounded-lg ${bg} flex items-center justify-center shrink-0`}>
+        {icon}
+      </div>
+      <div>
+        <p className="text-xs text-slate-500 leading-tight">{label}</p>
+        <p className="text-2xl font-bold text-slate-800 mt-0.5">{value}</p>
+      </div>
+    </div>
   );
 }

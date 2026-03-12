@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Badge } from "@/components/ui/badge";
@@ -22,18 +22,10 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { projectTimesheetService, ProjectTeamMember } from "@/services/timesheet";
+import { getInitials, fmtDate as fmtDateUtil } from "@/lib/utils";
 import { clsx } from "clsx";
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function getInitials(name: string) {
-  return name.split(" ").slice(0, 2).map(n => n[0]).join("").toUpperCase();
-}
-
-function fmtDate(iso: string | null) {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-}
+const fmtDate = fmtDateUtil;
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -110,10 +102,12 @@ export default function ProjectDashboardPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, month, year]);
 
-  // Stats
-  const submitted = team.filter(m => m.status === "submitted").length;
-  const inProgress = team.filter(m => m.status === "draft").length;
-  const notStarted = team.filter(m => m.status === "not_started").length;
+  // Stats — memoised so they don't recalculate on every render
+  const { submitted, inProgress, notStarted } = useMemo(() => ({
+    submitted:  team.filter(m => m.status === "submitted").length,
+    inProgress: team.filter(m => m.status === "draft").length,
+    notStarted: team.filter(m => m.status === "not_started").length,
+  }), [team]);
 
   // Year options: current year ± 1
   const yearOptions = [year - 1, year, year + 1];

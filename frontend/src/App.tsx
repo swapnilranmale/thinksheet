@@ -5,6 +5,7 @@ import LoginPage from "./pages/LoginPage";
 import SignupPage from "./pages/SignupPage";
 import ChangePasswordPage from "./pages/ChangePasswordPage";
 import EmployeeDashboardPage from "./pages/EmployeeDashboardPage";
+import EmployeeProjectsPage from "./pages/EmployeeProjectsPage";
 import EmployeeTimesheetPage from "./pages/EmployeeTimesheetPage";
 import ManagerTimesheetReviewPage from "./pages/ManagerTimesheetReviewPage";
 import EmployeeManagerMappingPage from "./pages/EmployeeManagerMappingPage";
@@ -17,7 +18,7 @@ function RoleRedirect() {
   if (isLoading) return null;
   if (!user) return <Navigate to="/login" replace />;
   if (user.role === "ADMINISTRATOR") return <Navigate to="/timesheet/mapping" replace />;
-  if (user.role === "MANAGER") return <Navigate to="/projects" replace />;
+  if (user.role === "MANAGER") return <Navigate to="/workspace" replace />;
   return <Navigate to="/dashboard" replace />;
 }
 
@@ -29,12 +30,20 @@ export default function App() {
       <Route path="/signup" element={<SignupPage />} />
       <Route path="/change-password" element={<ChangePasswordPage />} />
 
-      {/* Employee: dashboard (project list) → timesheet */}
+      {/* Employee: dashboard → projects → timesheet */}
       <Route
         path="/dashboard"
         element={
           <ProtectedRoute roles={["EMPLOYEE"]}>
             <EmployeeDashboardPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/dashboard/projects"
+        element={
+          <ProtectedRoute roles={["EMPLOYEE"]}>
+            <EmployeeProjectsPage />
           </ProtectedRoute>
         }
       />
@@ -49,7 +58,7 @@ export default function App() {
 
       {/* Manager */}
       <Route
-        path="/projects"
+        path="/workspace"
         element={
           <ProtectedRoute roles={["MANAGER"]}>
             <EmployeeManagementPage />
@@ -64,14 +73,9 @@ export default function App() {
           </ProtectedRoute>
         }
       />
-      <Route
-        path="/employees/manage"
-        element={
-          <ProtectedRoute roles={["MANAGER"]}>
-            <EmployeeManagementPage />
-          </ProtectedRoute>
-        }
-      />
+      {/* Legacy redirects */}
+      <Route path="/projects" element={<Navigate to="/workspace?tab=projects" replace />} />
+      <Route path="/employees/manage" element={<Navigate to="/workspace?tab=employees" replace />} />
 
       {/* Admin */}
       <Route
