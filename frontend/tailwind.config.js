@@ -35,6 +35,72 @@ export default {
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
       },
+      animation: {
+        "fade-in": "fade-in 0.2s ease-out",
+        "float-slow": "float-slow 6s ease-in-out infinite",
+        "float-slower": "float-slower 8s ease-in-out infinite",
+        "float-slowest": "float-slowest 10s ease-in-out infinite",
+        "gradient": "gradient-shift 8s ease infinite",
+        "slide-up": "slide-up 0.5s ease-out",
+        "slide-in-left": "slide-in-left 0.6s ease-out",
+        "error-in": "error-slide-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
+        "shake": "shake 0.4s ease-in-out",
+        "badge-appear": "badge-appear 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)",
+        "spin-smooth": "spin-smooth 1s linear infinite",
+        "text-fade": "text-fade 0.6s ease-out",
+      },
+      keyframes: {
+        "fade-in": {
+          "from": { opacity: "0", transform: "translateY(4px)" },
+          "to": { opacity: "1", transform: "translateY(0)" },
+        },
+        "float-slow": {
+          "0%, 100%": { transform: "translateY(0px) translateX(0px)" },
+          "50%": { transform: "translateY(-20px) translateX(10px)" },
+        },
+        "float-slower": {
+          "0%, 100%": { transform: "translateY(0px)" },
+          "50%": { transform: "translateY(-30px)" },
+        },
+        "float-slowest": {
+          "0%, 100%": { transform: "translateY(0px) translateX(0px)" },
+          "50%": { transform: "translateY(-25px) translateX(-15px)" },
+        },
+        "gradient-shift": {
+          "0%": { backgroundPosition: "0% 50%" },
+          "50%": { backgroundPosition: "100% 50%" },
+          "100%": { backgroundPosition: "0% 50%" },
+        },
+        "slide-up": {
+          "from": { opacity: "0", transform: "translateY(20px)" },
+          "to": { opacity: "1", transform: "translateY(0)" },
+        },
+        "slide-in-left": {
+          "from": { opacity: "0", transform: "translateX(-30px)" },
+          "to": { opacity: "1", transform: "translateX(0)" },
+        },
+        "error-slide-in": {
+          "from": { opacity: "0", transform: "translateY(-10px) scaleX(0.95)" },
+          "to": { opacity: "1", transform: "translateY(0) scaleX(1)" },
+        },
+        "shake": {
+          "0%, 100%": { transform: "translateX(0)" },
+          "10%, 30%, 50%, 70%, 90%": { transform: "translateX(-2px)" },
+          "20%, 40%, 60%, 80%": { transform: "translateX(2px)" },
+        },
+        "badge-appear": {
+          "from": { opacity: "0", transform: "scale(0.8)" },
+          "to": { opacity: "1", transform: "scale(1)" },
+        },
+        "spin-smooth": {
+          "from": { transform: "rotate(0deg)" },
+          "to": { transform: "rotate(360deg)" },
+        },
+        "text-fade": {
+          "from": { opacity: "0", transform: "translateY(10px)" },
+          "to": { opacity: "1", transform: "translateY(0)" },
+        },
+      },
     },
   },
   plugins: [],
