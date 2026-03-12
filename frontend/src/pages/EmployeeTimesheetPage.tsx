@@ -33,10 +33,21 @@ import {
   Undo2,
   Pencil,
   AlertTriangle,
+  Download,
+  FileSpreadsheet,
+  FileText,
+  File,
 } from "lucide-react";
 import { toast } from "sonner";
 import { timesheetService, Timesheet, TimesheetEntry, DayStatus } from "@/services/timesheet";
 import { getErrorMessage } from "@/lib/api";
+import {
+  buildExportRows,
+  exportToXLSX,
+  exportToCSV,
+  exportToPDF,
+  ExportFormat,
+} from "@/lib/timesheetExport";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -80,8 +91,8 @@ function defaultStatus(d: Date): DayStatus {
   return isWeekend(d) ? "Holiday" : "Working";
 }
 
-function defaultBillable(status: DayStatus): number {
-  return status === "Working" || status === "Extra Working" ? 8 : 0;
+function defaultBillable(_status: DayStatus): number {
+  return 0;
 }
 
 function emptyCell(d?: Date): CellEntry {
@@ -188,6 +199,12 @@ export default function EmployeeTimesheetPage() {
   // Submit confirmation
   const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false);
   const [submitWarnings, setSubmitWarnings] = useState<string[]>([]);
+
+  // Export dialog
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<ExportFormat>("xlsx");
+  const [exportFromDate, setExportFromDate] = useState("");
+  const [exportToDate, setExportToDate] = useState("");
 
   const [timesheet, setTimesheet] = useState<Timesheet | null>(null);
   const [cells, setCells] = useState<CellsMap>({});
@@ -396,6 +413,53 @@ export default function EmployeeTimesheetPage() {
     }
   }
 
+  // ── Export ────────────────────────────────────────────────────────────────
+
+  function openExportDialog() {
+    // Default: full current month
+    const firstDay = new Date(selectedYear, selectedMonth, 1);
+    const lastDay = new Date(selectedYear, selectedMonth + 1, 0);
+    setExportFromDate(toDateKey(firstDay));
+    setExportToDate(toDateKey(lastDay));
+    setExportOpen(true);
+  }
+
+  function handleExport() {
+    if (!exportFromDate || !exportToDate) {
+      toast.error("Please select a valid date range.");
+      return;
+    }
+    const from = new Date(exportFromDate);
+    const to = new Date(exportToDate);
+    if (from > to) {
+      toast.error("Start date must be before end date.");
+      return;
+    }
+
+    const rows = buildExportRows(cells, from, to);
+    if (rows.length === 0) {
+      toast.error("No data in selected date range.");
+      return;
+    }
+
+    const totalBillable = rows.reduce((s, r) => s + r.billableHours, 0);
+    const name = decodeURIComponent(projectName);
+    const monthLabel = exportFromDate === exportToDate
+      ? exportFromDate
+      : `${exportFromDate} to ${exportToDate}`;
+    const filename = `Timesheet_${name}_${exportFromDate}_${exportToDate}`.replace(/\s+/g, "_");
+
+    try {
+      if (exportFormat === "xlsx") exportToXLSX(rows, filename);
+      else if (exportFormat === "csv") exportToCSV(rows, filename);
+      else exportToPDF(rows, filename, { projectName: name, monthLabel, totalBillable });
+      toast.success(`Exported as ${exportFormat.toUpperCase()}`);
+      setExportOpen(false);
+    } catch {
+      toast.error("Export failed. Please try again.");
+    }
+  }
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -455,7 +519,7 @@ export default function EmployeeTimesheetPage() {
                   <span>{MONTHS[selectedMonth]}</span>
                 </div>
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent searchable>
                 {MONTHS.map((m, idx) => (
                   <SelectItem key={idx} value={String(idx)}>
                     {m}
@@ -475,6 +539,17 @@ export default function EmployeeTimesheetPage() {
                 Draft
               </Badge>
             )}
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={openExportDialog}
+              disabled={loading}
+              className="gap-1.5"
+            >
+              <Download className="w-4 h-4" />
+              Export
+            </Button>
           </div>
         </div>
 
@@ -751,6 +826,83 @@ export default function EmployeeTimesheetPage() {
           </Button>
         </div>
       )}
+
+      {/* Export dialog */}
+      <AlertDialog open={exportOpen} onOpenChange={setExportOpen}>
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Download className="w-5 h-5 text-[#217346]" />
+              Export Timesheet
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              <div className="space-y-4 pt-1">
+                {/* Date range */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">From</label>
+                    <input
+                      type="date"
+                      value={exportFromDate}
+                      onChange={(e) => setExportFromDate(e.target.value)}
+                      className="w-full border rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">To</label>
+                    <input
+                      type="date"
+                      value={exportToDate}
+                      onChange={(e) => setExportToDate(e.target.value)}
+                      className="w-full border rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]"
+                    />
+                  </div>
+                </div>
+
+                {/* Format selector */}
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-2">Format</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(["xlsx", "csv", "pdf"] as ExportFormat[]).map((fmt) => {
+                      const icons = {
+                        xlsx: <FileSpreadsheet className="w-4 h-4" />,
+                        csv: <FileText className="w-4 h-4" />,
+                        pdf: <File className="w-4 h-4" />,
+                      };
+                      const labels = { xlsx: "Excel (.xlsx)", csv: "CSV", pdf: "PDF" };
+                      const active = exportFormat === fmt;
+                      return (
+                        <button
+                          key={fmt}
+                          onClick={() => setExportFormat(fmt)}
+                          className={`flex flex-col items-center gap-1.5 px-3 py-3 rounded-lg border text-xs font-medium transition-all ${
+                            active
+                              ? "bg-[#217346] text-white border-[#217346]"
+                              : "bg-white text-slate-600 border-slate-200 hover:border-[#217346] hover:text-[#217346]"
+                          }`}
+                        >
+                          {icons[fmt]}
+                          {labels[fmt]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleExport}
+              className="bg-[#217346] hover:bg-[#185c37] text-white"
+            >
+              <Download className="w-4 h-4" />
+              Export
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Submit confirmation dialog */}
       <AlertDialog open={submitConfirmOpen} onOpenChange={setSubmitConfirmOpen}>

@@ -62,6 +62,7 @@ import { toast } from "sonner";
 import {
   employeeService,
   streamlineService,
+  managerTimesheetService,
   EmployeeMaster,
   StreamlineTeam,
   SyncResult,
@@ -70,6 +71,8 @@ import {
   ResourceMasterProject,
 } from "@/services/timesheet";
 import { authService } from "@/lib/auth";
+import { TeamMultiSelect } from "@/components/ui/team-multi-select";
+import { exportAdminProjectsXLSX, AdminExportProject, AdminTimesheetEntry } from "@/lib/timesheetExport";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -286,48 +289,21 @@ function CreateManagerDialog({
 
           {/* Teams */}
           <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide">
-                Assign Teams <span className="text-red-500">*</span>
-              </label>
-              {selectedTeamIds.length > 0 && (
-                <span className="text-xs font-medium text-[#217346] bg-[#217346]/10 px-2 py-0.5 rounded-full">
-                  {selectedTeamIds.length} selected
-                </span>
-              )}
-            </div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              Assign Teams <span className="text-red-500">*</span>
+            </label>
             {teamsLoading ? (
               <div className="flex items-center gap-2 text-sm text-slate-400 py-4 justify-center border border-slate-200 rounded-lg bg-slate-50">
                 <Loader2 className="w-4 h-4 animate-spin text-[#217346]" /> Loading teams...
               </div>
             ) : (
-              <div className={`border rounded-lg divide-y max-h-44 overflow-y-auto ${errors.teams ? "border-red-400" : "border-slate-200"}`}>
-                {teams.length === 0 ? (
-                  <div className="p-4 text-center text-sm text-slate-400">No engineering teams found</div>
-                ) : (
-                  teams.map(team => {
-                    const isChecked = selectedTeamIds.includes(team._id);
-                    return (
-                      <label
-                        key={team._id}
-                        className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors ${isChecked ? "bg-[#217346]/5 hover:bg-[#217346]/10" : "hover:bg-slate-50"}`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => toggleTeam(team._id)}
-                          className="h-4 w-4 rounded border-gray-300 accent-[#217346]"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <p className={`text-sm font-medium ${isChecked ? "text-[#217346]" : "text-slate-700"}`}>{team.team_name}</p>
-                          <p className="text-xs text-slate-400">{team.unique_id} · {team.department_id?.department_name}</p>
-                        </div>
-                        {isChecked && <CheckCircle2 className="w-4 h-4 text-[#217346] shrink-0" />}
-                      </label>
-                    );
-                  })
-                )}
-              </div>
+              <TeamMultiSelect
+                teams={teams}
+                selectedIds={selectedTeamIds}
+                onChange={(ids) => { setSelectedTeamIds(ids); if (errors.teams) setErrors(p => ({ ...p, teams: "" })); }}
+                error={errors.teams}
+                placeholder="Select teams..."
+              />
             )}
             <FieldError msg={errors.teams} />
           </div>
@@ -680,48 +656,16 @@ function ManagersTab() {
 
             {/* Teams */}
             <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide">
-                  Assigned Teams <span className="text-red-500">*</span>
-                </label>
-                {editTeamIds.length > 0 && (
-                  <span className="text-xs font-medium text-[#217346] bg-[#217346]/10 px-2 py-0.5 rounded-full">
-                    {editTeamIds.length} selected
-                  </span>
-                )}
-              </div>
-              <div className={`border rounded-lg divide-y max-h-44 overflow-y-auto ${editErrors.editTeams ? "border-red-400" : "border-slate-200"}`}>
-                {teams.length === 0 ? (
-                  <div className="p-4 text-center text-sm text-slate-400">No engineering teams found</div>
-                ) : (
-                  teams.map(team => {
-                    const isChecked = editTeamIds.includes(team._id);
-                    return (
-                      <label
-                        key={team._id}
-                        className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors ${isChecked ? "bg-[#217346]/5 hover:bg-[#217346]/10" : "hover:bg-slate-50"}`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => {
-                            setEditTeamIds(prev =>
-                              prev.includes(team._id) ? prev.filter(id => id !== team._id) : [...prev, team._id]
-                            );
-                            setEditErrors(p => { const n = { ...p }; delete n.editTeams; return n; });
-                          }}
-                          className="h-4 w-4 rounded border-gray-300 accent-[#217346]"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <p className={`text-sm font-medium ${isChecked ? "text-[#217346]" : "text-slate-700"}`}>{team.team_name}</p>
-                          <p className="text-xs text-slate-400">{team.unique_id} · {team.department_id?.department_name}</p>
-                        </div>
-                        {isChecked && <CheckCircle2 className="w-4 h-4 text-[#217346] shrink-0" />}
-                      </label>
-                    );
-                  })
-                )}
-              </div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                Assigned Teams <span className="text-red-500">*</span>
+              </label>
+              <TeamMultiSelect
+                teams={teams}
+                selectedIds={editTeamIds}
+                onChange={(ids) => { setEditTeamIds(ids); setEditErrors(p => { const n = { ...p }; delete n.editTeams; return n; }); }}
+                error={editErrors.editTeams}
+                placeholder="Select teams..."
+              />
               <FieldError msg={editErrors.editTeams} />
             </div>
           </div>
@@ -972,7 +916,7 @@ function EmployeesTab() {
                 {filterTeamId === "all" ? "All Teams" : (teams.find(t => t._id === filterTeamId)?.team_name || "All Teams")}
               </span>
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent searchable>
               <SelectItem value="all">All Teams</SelectItem>
               {teams.map(t => <SelectItem key={t._id} value={t._id}>{t.team_name}</SelectItem>)}
             </SelectContent>
@@ -991,7 +935,7 @@ function EmployeesTab() {
             title="Fetch all employees and project assignments from Streamline360 Resource Master"
           >
             {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-            {syncing ? "Syncing..." : "Sync from Streamline"}
+            {syncing ? "Syncing..." : "Sync"}
           </Button>
           <Button variant="outline" onClick={() => setUploadOpen(true)} className="gap-2 whitespace-nowrap">
             <Upload className="w-4 h-4" />
@@ -1010,26 +954,10 @@ function EmployeesTab() {
           <span className="text-sm">Loading employees...</span>
         </div>
       ) : filtered.length === 0 ? (
-        <div className="border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center py-16">
-          <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-3">
-            <Users className="w-7 h-7 text-slate-400 opacity-60" />
-          </div>
-          <p className="font-medium text-slate-600">
-            {searchQuery || filterTeamId !== "all" ? "No employees match your filters" : "No employees yet"}
-          </p>
-          <p className="text-sm mt-1 text-slate-400 text-center max-w-xs">
-            {searchQuery || filterTeamId !== "all"
-              ? "Try adjusting your search or team filter"
-              : `Click "Sync from Streamline" to import employees, or add manually`}
-          </p>
-          {(searchQuery || filterTeamId !== "all") && (
-            <button
-              onClick={() => { setSearchQuery(""); setFilterTeamId("all"); }}
-              className="mt-3 text-sm text-[#217346] hover:underline"
-            >
-              Clear filters
-            </button>
-          )}
+        <div className="border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center py-16 text-slate-400">
+          <Users className="w-10 h-10 mb-3 opacity-30" />
+          <p className="font-medium text-slate-600">No employees yet</p>
+          <p className="text-sm mt-1">Click "Sync" to import all employees from Resource Master, or add manually</p>
         </div>
       ) : (
         <>
@@ -1167,8 +1095,10 @@ function EmployeesTab() {
                 <SelectTrigger className="border-slate-200 bg-slate-50 hover:border-slate-300 focus:ring-[#217346]/40 focus:border-[#217346]">
                   <SelectValue placeholder="Select team..." />
                 </SelectTrigger>
-                <SelectContent>
-                  {teams.map(t => <SelectItem key={t._id} value={t._id}>{t.team_name}</SelectItem>)}
+                <SelectContent searchable>
+                  {teams.map(t => (
+                    <SelectItem key={t._id} value={t._id}>{t.team_name}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -1325,10 +1255,8 @@ function EmployeesTab() {
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Team <span className="text-red-500">*</span></label>
               <Select value={newEmpTeamId} onValueChange={v => { setNewEmpTeamId(v); if (createErrors.team_id) setCreateErrors(p => ({ ...p, team_id: "" })); }}>
-                <SelectTrigger className={`${createErrors.team_id ? "border-red-400 bg-red-50" : "border-slate-200 bg-slate-50 hover:border-slate-300"} focus:ring-[#217346]/40 focus:border-[#217346]`}>
-                  <SelectValue placeholder="Select team..." />
-                </SelectTrigger>
-                <SelectContent>
+                <SelectTrigger className={createErrors.team_id ? "border-red-400 bg-red-50" : ""}><SelectValue placeholder="Select team..." /></SelectTrigger>
+                <SelectContent searchable>
                   {teams.map(t => <SelectItem key={t._id} value={t._id}>{t.team_name}</SelectItem>)}
                 </SelectContent>
               </Select>
@@ -1459,10 +1387,8 @@ function EmployeesTab() {
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Team</label>
                 <Select value={editEmpTeamId} onValueChange={setEditEmpTeamId}>
-                  <SelectTrigger className="border-slate-200 bg-slate-50 hover:border-slate-300 focus:ring-[#217346]/40 focus:border-[#217346]">
-                    <SelectValue placeholder="Select team..." />
-                  </SelectTrigger>
-                  <SelectContent>
+                  <SelectTrigger><SelectValue placeholder="Select team..." /></SelectTrigger>
+                  <SelectContent searchable>
                     {teams.map(t => <SelectItem key={t._id} value={t._id}>{t.team_name}</SelectItem>)}
                   </SelectContent>
                 </Select>
@@ -1806,10 +1732,119 @@ function ProjectsTab() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [clientGroups, setClientGroups] = useState<ClientGroup[]>([]);
-  const [expandedClients, setExpandedClients] = useState<Set<string>>(new Set());
-  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedProjects, setSelectedProjects] = useState<Set<string>>(new Set());
+
+  // Drill-down state
+  type ProjectView = "clients" | "projects" | "resources";
+  const [projectView, setProjectView] = useState<ProjectView>("clients");
+  const [selectedClient, setSelectedClient] = useState<ClientGroup | null>(null);
+  const [selectedProject, setSelectedProject] = useState<ResourceMasterProject | null>(null);
+  const [clientSearch, setClientSearch] = useState("");
+  const [projectSearch, setProjectSearch] = useState("");
+
+  // Export state
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportProjects, setExportProjects] = useState<AdminExportProject[]>([]);
+  const [exportLabel, setExportLabel] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const today = new Date();
+  const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+  const [exportFrom, setExportFrom] = useState(firstOfMonth.toISOString().split("T")[0]);
+  const [exportTo, setExportTo] = useState(today.toISOString().split("T")[0]);
+
+  function openExport(projects: AdminExportProject[], label: string) {
+    setExportProjects(projects);
+    setExportLabel(label);
+    setExportOpen(true);
+  }
+
+  async function handleExport() {
+    setExporting(true);
+    try {
+      const from = new Date(exportFrom);
+      const to = new Date(exportTo);
+
+      // Collect all unique resources across export projects
+      const seenEmails = new Set<string>();
+      const allResources: { resource: typeof exportProjects[0]["resources"][0]; project_name: string; client_name: string }[] = [];
+      for (const proj of exportProjects) {
+        for (const r of proj.resources) {
+          if (!seenEmails.has(r.email)) {
+            seenEmails.add(r.email);
+            allResources.push({ resource: r, project_name: proj.project_name, client_name: proj.client_name });
+          }
+        }
+      }
+
+      // Collect all months in the date range
+      const months: { month: number; year: number }[] = [];
+      const cur = new Date(from.getFullYear(), from.getMonth(), 1);
+      const endMonth = new Date(to.getFullYear(), to.getMonth(), 1);
+      while (cur <= endMonth) {
+        months.push({ month: cur.getMonth() + 1, year: cur.getFullYear() });
+        cur.setMonth(cur.getMonth() + 1);
+      }
+
+      // Fetch timesheets for each resource per month and merge entries
+      const enrichedProjects = exportProjects.map(proj => ({
+        ...proj,
+        resources: proj.resources.map(r => ({ ...r, project_name: proj.project_name, client_name: proj.client_name, entries: [] as AdminTimesheetEntry[] })),
+      }));
+
+      // Build email → entries map by fetching each resource's timesheet
+      const entryMap: Record<string, AdminTimesheetEntry[]> = {};
+      // Get unique employee_ids — try to find by matching employees list
+      // We use email as lookup key via getEmployeeTimesheet which needs employee_id
+      // First get all employees to map email → employee_id
+      let emailToEmpId: Record<string, string> = {};
+      try {
+        const empRes = await employeeService.getAll();
+        for (const e of empRes.data ?? []) {
+          if (e.official_email) emailToEmpId[e.official_email] = e._id;
+        }
+      } catch { /* skip — will export without entries */ }
+
+      for (const { resource } of allResources) {
+        const empId = emailToEmpId[resource.email];
+        if (!empId) continue;
+        const allEntries: AdminTimesheetEntry[] = [];
+        for (const { month, year } of months) {
+          try {
+            const res = await managerTimesheetService.getEmployeeTimesheet(empId, month, year);
+            if (res.data?.entries) {
+              for (const e of res.data.entries) {
+                allEntries.push({
+                  date: e.date,
+                  status: e.status,
+                  tasks: Array.isArray(e.tasks) ? e.tasks.join("; ") : (e.tasks || ""),
+                  billable_hours: e.billable_hours,
+                });
+              }
+            }
+          } catch { /* skip month */ }
+        }
+        entryMap[resource.email] = allEntries;
+      }
+
+      // Attach entries to enriched projects
+      for (const proj of enrichedProjects) {
+        for (const r of proj.resources) {
+          r.entries = entryMap[r.email] ?? [];
+        }
+      }
+
+      exportAdminProjectsXLSX(
+        enrichedProjects,
+        from,
+        to,
+        exportLabel.replace(/[^a-zA-Z0-9_-]/g, "_")
+      );
+      setExportOpen(false);
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Export failed"));
+    } finally {
+      setExporting(false);
+    }
+  }
 
   useEffect(() => {
     streamlineService.getMyResourceProjects()
@@ -1818,255 +1853,419 @@ function ProjectsTab() {
         res.data.forEach(proj => {
           const key = proj.client_id || "__no_client__";
           const name = proj.client_name || "No Client";
-          if (!clientMap[key]) {
-            clientMap[key] = { client_id: key, client_name: name, projects: [], total_resources: 0 };
-          }
+          if (!clientMap[key]) clientMap[key] = { client_id: key, client_name: name, projects: [], total_resources: 0 };
           clientMap[key].projects.push(proj);
           clientMap[key].total_resources += proj.resource_count;
         });
-        const groups = Object.values(clientMap).sort((a, b) => b.total_resources - a.total_resources);
-        setClientGroups(groups);
-        setExpandedClients(new Set(groups.map(g => g.client_id)));
+        setClientGroups(Object.values(clientMap).sort((a, b) => b.total_resources - a.total_resources));
       })
       .catch(err => toast.error(getErrorMessage(err, "Failed to load projects")))
       .finally(() => setLoading(false));
   }, []);
 
-  function toggleClient(id: string) {
-    setExpandedClients(prev => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  }
-
-  function toggleProject(id: string) {
-    setExpandedProjects(prev => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  }
-
-  function toggleSelectProject(id: string) {
-    setSelectedProjects(prev => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  }
-
-  function viewTimesheets(ids: string[]) {
+  function viewTimesheets(projectId: string) {
     const now = new Date();
-    const month = now.getMonth() + 1;
-    const year = now.getFullYear();
-    // Build a metadata map so the dashboard can show names immediately (before API responds)
-    const allProjects = clientGroups.flatMap(cg => cg.projects);
-    const meta: Record<string, { project_name: string; project_code: string; client_name: string }> = {};
-    ids.forEach(id => {
-      const p = allProjects.find(p => p.project_id === id);
-      if (p) meta[id] = { project_name: p.project_name, project_code: p.project_code, client_name: p.client_name };
-    });
-    navigate(`/admin/projects?projects=${ids.join(",")}&month=${month}&year=${year}`, { state: meta });
+    const p = clientGroups.flatMap(cg => cg.projects).find(p => p.project_id === projectId);
+    const meta = p ? { [projectId]: { project_name: p.project_name, project_code: p.project_code, client_name: p.client_name } } : {};
+    navigate(`/admin/projects?projects=${projectId}&month=${now.getMonth() + 1}&year=${now.getFullYear()}`, { state: meta });
   }
 
-  const lowerQ = searchQuery.toLowerCase().trim();
-  const filteredGroups = clientGroups
-    .map(cg => ({
-      ...cg,
-      projects: cg.projects.filter(p =>
-        !lowerQ ||
-        p.project_name.toLowerCase().includes(lowerQ) ||
-        p.project_code.toLowerCase().includes(lowerQ) ||
-        cg.client_name.toLowerCase().includes(lowerQ)
-      ),
-    }))
-    .filter(cg => cg.projects.length > 0);
+  // ── Breadcrumb ──────────────────────────────────────────────────────────
 
-  const totalProjects = clientGroups.reduce((s, cg) => s + cg.projects.length, 0);
+  const Breadcrumb = () => (
+    <div className="flex items-center gap-1.5 text-sm mb-4">
+      <button onClick={() => { setProjectView("clients"); setSelectedClient(null); setSelectedProject(null); }}
+        className={projectView === "clients" ? "font-semibold text-slate-800" : "text-slate-400 hover:text-slate-700 transition-colors"}>
+        Clients & Projects
+      </button>
+      {(projectView === "projects" || projectView === "resources") && selectedClient && (
+        <>
+          <ChevronRight className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+          <button onClick={() => { setProjectView("projects"); setSelectedProject(null); }}
+            className={projectView === "projects" ? "font-semibold text-slate-800" : "text-slate-400 hover:text-slate-700 transition-colors truncate max-w-[160px]"}>
+            {selectedClient.client_name}
+          </button>
+        </>
+      )}
+      {projectView === "resources" && selectedProject && (
+        <>
+          <ChevronRight className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+          <span className="font-semibold text-slate-800 truncate max-w-[160px]">{selectedProject.project_name}</span>
+        </>
+      )}
+    </div>
+  );
 
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16 text-slate-400 gap-2">
-        <Loader2 className="w-5 h-5 animate-spin" />
-        <span>Loading projects from Streamline360…</span>
+        <Loader2 className="w-5 h-5 animate-spin" /><span>Loading projects…</span>
       </div>
     );
   }
 
-  if (clientGroups.length === 0) {
-    return (
-      <div className="border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center py-16 text-slate-400">
-        <FolderOpen className="w-10 h-10 mb-3 opacity-30" />
-        <p className="font-medium text-slate-600">No projects found</p>
-        <p className="text-sm mt-1">Sync from Streamline360 to populate project data</p>
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      {/* Toolbar */}
-      <div className="flex items-center gap-4 mb-5 flex-wrap">
-        <div className="relative flex-1 min-w-[200px] max-w-xs">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Search projects or clients…"
-            className="w-full h-9 pl-9 pr-3 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346] bg-white"
-          />
+  // ── Shared export dialog ────────────────────────────────────────────────
+  const ExportDialog = (
+    <AlertDialog open={exportOpen} onOpenChange={setExportOpen}>
+      <AlertDialogContent className="max-w-sm">
+        <AlertDialogHeader>
+          <AlertDialogTitle className="flex items-center gap-2">
+            <Download className="w-4 h-4 text-[#217346]" />
+            Export Timesheet
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            Exporting <strong>{exportLabel}</strong>
+            <br />
+            <span className="text-xs">
+              {exportProjects.length} project{exportProjects.length !== 1 ? "s" : ""} ·{" "}
+              {exportProjects.reduce((s, p) => s + p.resources.length, 0)} resources
+            </span>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <div className="space-y-4 py-1">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">From date</label>
+              <input
+                type="date"
+                value={exportFrom}
+                onChange={e => setExportFrom(e.target.value)}
+                className="w-full h-9 rounded-md border border-slate-200 px-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]/30 focus:border-[#217346]"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">To date</label>
+              <input
+                type="date"
+                value={exportTo}
+                onChange={e => setExportTo(e.target.value)}
+                className="w-full h-9 rounded-md border border-slate-200 px-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]/30 focus:border-[#217346]"
+              />
+            </div>
+          </div>
+          <p className="text-xs text-slate-400">
+            Downloads an XLSX with a Summary sheet + one sheet per project.
+          </p>
         </div>
-        <p className="text-sm text-slate-400 flex-1">
-          {clientGroups.length} client{clientGroups.length !== 1 ? "s" : ""} · {totalProjects} project{totalProjects !== 1 ? "s" : ""} · live from Streamline360
-        </p>
-        {selectedProjects.size > 0 && (
-          <Button
-            size="sm"
-            className="bg-[#217346] hover:bg-[#1a5c38] text-white h-9"
-            onClick={() => viewTimesheets([...selectedProjects])}
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={handleExport}
+            disabled={exporting || !exportFrom || !exportTo}
+            className="bg-[#217346] hover:bg-[#1a5c38] text-white gap-2"
           >
-            <Users className="w-4 h-4 mr-1.5" />
-            Open Selected ({selectedProjects.size})
-          </Button>
-        )}
-      </div>
-
-      {filteredGroups.length === 0 ? (
-        <div className="border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center py-12 text-slate-400">
-          <Search className="w-8 h-8 mb-2 opacity-30" />
-          <p className="font-medium text-slate-600">No results for "{searchQuery}"</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {filteredGroups.map(cg => {
-            const isClientOpen = expandedClients.has(cg.client_id);
-            return (
-              <div key={cg.client_id} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-                {/* Client header */}
-                <button
-                  onClick={() => toggleClient(cg.client_id)}
-                  className="w-full flex items-center gap-3 px-5 py-4 hover:bg-slate-50 transition-colors text-left"
-                >
-                  <div className="w-9 h-9 rounded-lg bg-blue-100 flex items-center justify-center shrink-0">
-                    <Building2 className="w-4 h-4 text-blue-600" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-slate-900">{cg.client_name}</p>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      {cg.projects.length} project{cg.projects.length !== 1 ? "s" : ""} · {cg.total_resources} resource{cg.total_resources !== 1 ? "s" : ""}
-                    </p>
-                  </div>
-                  <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform shrink-0 ${isClientOpen ? "rotate-180" : ""}`} />
-                </button>
-
-                {/* Projects list */}
-                {isClientOpen && (
-                  <div className="border-t border-slate-100 divide-y divide-slate-100">
-                    {cg.projects.map(proj => {
-                      const isProjOpen = expandedProjects.has(proj.project_id);
-                      return (
-                        <div key={proj.project_id}>
-                          {/* Project row */}
-                          <div className="flex items-center gap-2 px-3 sm:px-5 py-3 pl-6 sm:pl-14 hover:bg-slate-50 transition-colors">
-                            {/* Checkbox */}
-                            <input
-                              type="checkbox"
-                              checked={selectedProjects.has(proj.project_id)}
-                              onChange={() => toggleSelectProject(proj.project_id)}
-                              className="w-4 h-4 rounded border-slate-300 accent-[#217346] cursor-pointer shrink-0"
-                              onClick={e => e.stopPropagation()}
-                            />
-                            {/* Project expand toggle */}
-                            <button
-                              onClick={() => toggleProject(proj.project_id)}
-                              className="flex items-center gap-3 flex-1 min-w-0 text-left"
-                            >
-                              <div className="w-7 h-7 rounded-md bg-[#217346]/10 flex items-center justify-center shrink-0">
-                                <FolderOpen className="w-3.5 h-3.5 text-[#217346]" />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="font-medium text-slate-800 text-sm">{proj.project_name || "Unnamed Project"}</span>
-                                  {proj.project_code && (
-                                    <span className="text-xs font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
-                                      {proj.project_code}
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-3 mt-0.5 flex-wrap">
-                                  {(proj.start_date || proj.end_date) && (
-                                    <span className="text-xs text-slate-400 flex items-center gap-1">
-                                      <CalendarRange className="w-3 h-3" />
-                                      {formatDate(proj.start_date)} – {formatDate(proj.end_date)}
-                                    </span>
-                                  )}
-                                  <span className="text-xs text-[#217346] flex items-center gap-1">
-                                    <Users className="w-3 h-3" />
-                                    {proj.resource_count} resource{proj.resource_count !== 1 ? "s" : ""}
-                                  </span>
-                                </div>
-                              </div>
-                              {proj.resource_count > 0 && (
-                                <ChevronDown className={`w-3.5 h-3.5 text-slate-300 transition-transform shrink-0 ${isProjOpen ? "rotate-180" : ""}`} />
-                              )}
-                            </button>
-                            {/* View Timesheets button */}
-                            <button
-                              onClick={() => viewTimesheets([proj.project_id])}
-                              className="shrink-0 text-xs text-[#217346] hover:text-[#1a5c38] font-medium border border-[#217346]/30 hover:border-[#217346]/60 px-2.5 py-1.5 rounded-lg transition-colors whitespace-nowrap"
-                            >
-                              View Timesheets
-                            </button>
-                          </div>
-
-                          {/* Resources list */}
-                          {isProjOpen && proj.resources.length > 0 && (
-                            <div className="bg-slate-50 border-t border-slate-100 overflow-x-auto">
-                              <table className="w-full text-xs min-w-[560px]">
-                                <thead>
-                                  <tr className="border-b border-slate-200">
-                                    <th className="text-left px-6 pl-20 py-2 font-medium text-slate-400">Resource ID</th>
-                                    <th className="text-left px-4 py-2 font-medium text-slate-400">Name</th>
-                                    <th className="text-left px-4 py-2 font-medium text-slate-400">Email</th>
-                                    <th className="text-left px-4 py-2 font-medium text-slate-400">Designation</th>
-                                    <th className="text-left px-4 py-2 font-medium text-slate-400">Team</th>
-                                    <th className="text-left px-4 py-2 font-medium text-slate-400">Status</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                  {proj.resources.map((r, i) => (
-                                    <tr key={i} className="hover:bg-white transition-colors">
-                                      <td className="px-6 pl-20 py-2 font-mono text-slate-600">{r.resource_id || "—"}</td>
-                                      <td className="px-4 py-2 font-medium text-slate-700">{r.name || "—"}</td>
-                                      <td className="px-4 py-2 text-slate-500">{r.email || "—"}</td>
-                                      <td className="px-4 py-2 text-slate-500">{r.designation || "—"}</td>
-                                      <td className="px-4 py-2 text-slate-500">{r.team_name || "—"}</td>
-                                      <td className="px-4 py-2">
-                                        <span className={`inline-flex items-center gap-1 font-medium ${r.is_active ? "text-emerald-600" : "text-slate-400"}`}>
-                                          <span className={`w-1.5 h-1.5 rounded-full ${r.is_active ? "bg-emerald-500" : "bg-slate-300"}`} />
-                                          {r.is_active ? "Active" : "Inactive"}
-                                        </span>
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
+            {exporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+            {exporting ? "Fetching data…" : "Download XLSX"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
+
+  // ── VIEW: Clients ───────────────────────────────────────────────────────
+
+  if (projectView === "clients") {
+    if (clientGroups.length === 0) {
+      return (
+        <>
+          {ExportDialog}
+          <div className="border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center py-16 text-slate-400">
+            <FolderOpen className="w-10 h-10 mb-3 opacity-30" />
+            <p className="font-medium text-slate-600">No projects found</p>
+            <p className="text-sm mt-1">Sync to populate project data</p>
+          </div>
+        </>
+      );
+    }
+    const filteredClients = clientSearch.trim()
+      ? clientGroups.filter(cg => cg.client_name.toLowerCase().includes(clientSearch.toLowerCase()))
+      : clientGroups;
+    // Group projects by project_id across all clients to merge duplicate entries
+    const projectMap: Record<string, AdminExportProject> = {};
+    for (const cg of clientGroups) {
+      for (const p of cg.projects) {
+        const key = p.project_id || `${cg.client_name}|||${p.project_name}`;
+        if (!projectMap[key]) {
+          projectMap[key] = {
+            project_name: p.project_name,
+            project_code: p.project_code,
+            client_name: cg.client_name,
+            resources: [],
+          };
+        }
+        const seen = new Set(projectMap[key].resources.map(r => r.email));
+        for (const r of p.resources) {
+          if (!seen.has(r.email)) {
+            projectMap[key].resources.push({ name: r.name, email: r.email, designation: r.designation, team_name: r.team_name, resource_id: r.resource_id });
+            seen.add(r.email);
+          }
+        }
+      }
+    }
+    const allProjects: AdminExportProject[] = Object.values(projectMap);
+    return (
+      <>
+        {ExportDialog}
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold text-slate-900">Clients</h2>
+            <div className="flex items-center gap-2">
+              <p className="text-sm text-slate-400">
+                {clientGroups.length} client{clientGroups.length !== 1 ? "s" : ""} · {clientGroups.reduce((s, c) => s + c.projects.length, 0)} projects
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 border-[#217346] text-[#217346] hover:bg-[#217346]/5"
+                onClick={() => openExport(allProjects, "All Clients – All Projects")}
+              >
+                <Download className="w-3.5 h-3.5" />
+                Export All
+              </Button>
+            </div>
+          </div>
+          <div className="relative mb-4">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search clients..."
+              value={clientSearch}
+              onChange={e => setClientSearch(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#217346]/30 focus:border-[#217346]"
+            />
+          </div>
+          <div className="space-y-3">
+            {filteredClients.map(cg => (
+              <button
+                key={cg.client_id}
+                onClick={() => { setSelectedClient(cg); setProjectView("projects"); setProjectSearch(""); }}
+                className="w-full flex items-center gap-4 p-4 bg-white border border-slate-200 rounded-xl hover:border-[#217346] hover:shadow-sm transition-all text-left group"
+              >
+                <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center shrink-0">
+                  <Building2 className="w-5 h-5 text-blue-600" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-slate-900 group-hover:text-[#217346] transition-colors">{cg.client_name}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {cg.projects.length} project{cg.projects.length !== 1 ? "s" : ""} · {cg.total_resources} resource{cg.total_resources !== 1 ? "s" : ""}
+                  </p>
+                </div>
+                <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-[#217346] transition-colors shrink-0" />
+              </button>
+            ))}
+            {filteredClients.length === 0 && (
+              <p className="text-sm text-slate-400 text-center py-8">No clients match "{clientSearch}"</p>
+            )}
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // ── VIEW: Projects of a client ──────────────────────────────────────────
+
+  if (projectView === "projects" && selectedClient) {
+    const filteredProjects = projectSearch.trim()
+      ? selectedClient.projects.filter(p =>
+          (p.project_name || "").toLowerCase().includes(projectSearch.toLowerCase()) ||
+          (p.project_code || "").toLowerCase().includes(projectSearch.toLowerCase())
+        )
+      : selectedClient.projects;
+    // Merge duplicate project entries for this client
+    const clientProjMap: Record<string, AdminExportProject> = {};
+    for (const p of selectedClient.projects) {
+      const key = p.project_id || p.project_name;
+      if (!clientProjMap[key]) {
+        clientProjMap[key] = { project_name: p.project_name, project_code: p.project_code, client_name: selectedClient.client_name, resources: [] };
+      }
+      const seen = new Set(clientProjMap[key].resources.map(r => r.email));
+      for (const r of p.resources) {
+        if (!seen.has(r.email)) {
+          clientProjMap[key].resources.push({ name: r.name, email: r.email, designation: r.designation, team_name: r.team_name, resource_id: r.resource_id });
+          seen.add(r.email);
+        }
+      }
+    }
+    const clientExportProjects: AdminExportProject[] = Object.values(clientProjMap);
+    return (
+      <>
+        {ExportDialog}
+        <div>
+          <Breadcrumb />
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-base font-bold text-slate-900">{selectedClient.client_name}</h2>
+              <p className="text-xs text-slate-400 mt-0.5">{selectedClient.projects.length} project{selectedClient.projects.length !== 1 ? "s" : ""}</p>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5 border-[#217346] text-[#217346] hover:bg-[#217346]/5"
+              onClick={() => openExport(clientExportProjects, `${selectedClient.client_name} – All Projects`)}
+            >
+              <Download className="w-3.5 h-3.5" />
+              Export All
+            </Button>
+          </div>
+          <div className="relative mb-4">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search projects..."
+              value={projectSearch}
+              onChange={e => setProjectSearch(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#217346]/30 focus:border-[#217346]"
+            />
+          </div>
+          <div className="space-y-3">
+            {filteredProjects.map(proj => {
+              const projExport: AdminExportProject = {
+                project_name: proj.project_name,
+                project_code: proj.project_code,
+                client_name: selectedClient.client_name,
+                resources: proj.resources.map(r => ({
+                  name: r.name, email: r.email, designation: r.designation, team_name: r.team_name, resource_id: r.resource_id,
+                })),
+              };
+              return (
+                <div
+                  key={proj.project_id}
+                  className="flex items-center gap-3 bg-white border border-slate-200 rounded-xl hover:border-[#217346] hover:shadow-sm transition-all group"
+                >
+                  <button
+                    className="flex items-center gap-4 flex-1 p-4 text-left min-w-0"
+                    onClick={() => { setSelectedProject(proj); setProjectView("resources"); }}
+                  >
+                    <div className="w-10 h-10 rounded-xl bg-[#217346]/10 flex items-center justify-center shrink-0">
+                      <FolderOpen className="w-5 h-5 text-[#217346]" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-slate-900 group-hover:text-[#217346] transition-colors">{proj.project_name || "Unnamed Project"}</p>
+                        {proj.project_code && (
+                          <span className="text-xs font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{proj.project_code}</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 mt-0.5 text-xs text-slate-400">
+                        <span className="flex items-center gap-1"><Users className="w-3 h-3" />{proj.resource_count} resource{proj.resource_count !== 1 ? "s" : ""}</span>
+                        {(proj.start_date || proj.end_date) && (
+                          <span className="flex items-center gap-1">
+                            <CalendarRange className="w-3 h-3" />{formatDate(proj.start_date)} – {formatDate(proj.end_date)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-[#217346] transition-colors shrink-0" />
+                  </button>
+                  <button
+                    className="shrink-0 mr-3 p-2 rounded-lg text-slate-400 hover:text-[#217346] hover:bg-[#217346]/5 transition-colors"
+                    title={`Export ${proj.project_name}`}
+                    onClick={e => { e.stopPropagation(); openExport([projExport], proj.project_name); }}
+                  >
+                    <Download className="w-4 h-4" />
+                  </button>
+                </div>
+              );
+            })}
+            {filteredProjects.length === 0 && (
+              <p className="text-sm text-slate-400 text-center py-8">No projects match "{projectSearch}"</p>
+            )}
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // ── VIEW: Resources of a project ────────────────────────────────────────
+
+  if (projectView === "resources" && selectedProject) {
+    const projExport: AdminExportProject = {
+      project_name: selectedProject.project_name,
+      project_code: selectedProject.project_code,
+      client_name: selectedProject.client_name,
+      resources: selectedProject.resources.map(r => ({
+        name: r.name, email: r.email, designation: r.designation, team_name: r.team_name, resource_id: r.resource_id,
+      })),
+    };
+    return (
+      <>
+        {ExportDialog}
+        <div>
+          <Breadcrumb />
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-base font-bold text-slate-900">{selectedProject.project_name}</h2>
+              <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1">
+                <Building2 className="w-3 h-3" />{selectedProject.client_name}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 border-[#217346] text-[#217346] hover:bg-[#217346]/5"
+                onClick={() => openExport([projExport], selectedProject.project_name)}
+              >
+                <Download className="w-3.5 h-3.5" />
+                Export
+              </Button>
+              <Button
+                size="sm"
+                className="bg-[#217346] hover:bg-[#1a5c38] text-white gap-1.5"
+                onClick={() => viewTimesheets(selectedProject.project_id)}
+              >
+                <Eye className="w-3.5 h-3.5" />
+                View Timesheets
+              </Button>
+            </div>
+          </div>
+
+          {selectedProject.resources.length === 0 ? (
+            <div className="border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center py-12 text-slate-400">
+              <Users className="w-8 h-8 mb-2 opacity-30" />
+              <p className="font-medium text-slate-600">No resources</p>
+            </div>
+          ) : (
+            <div className="bg-white border rounded-xl overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-[#217346] text-white text-xs">
+                    <th className="px-4 py-3 text-left font-semibold w-8">#</th>
+                    <th className="px-4 py-3 text-left font-semibold">Name</th>
+                    <th className="px-4 py-3 text-left font-semibold">Resource ID</th>
+                    <th className="px-4 py-3 text-left font-semibold">Email</th>
+                    <th className="px-4 py-3 text-left font-semibold">Designation</th>
+                    <th className="px-4 py-3 text-left font-semibold">Team</th>
+                    <th className="px-4 py-3 text-left font-semibold">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {selectedProject.resources.map((r, i) => (
+                    <tr key={i} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-3 text-slate-400 text-xs font-mono">{i + 1}</td>
+                      <td className="px-4 py-3 font-medium text-slate-800">{r.name || "—"}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-slate-500">{r.resource_id || "—"}</td>
+                      <td className="px-4 py-3 text-slate-500 text-xs">{r.email || "—"}</td>
+                      <td className="px-4 py-3 text-slate-500 text-xs">{r.designation || "—"}</td>
+                      <td className="px-4 py-3 text-slate-500 text-xs">{r.team_name || "—"}</td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex items-center gap-1 text-xs font-medium ${r.is_active ? "text-emerald-600" : "text-slate-400"}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${r.is_active ? "bg-emerald-500" : "bg-slate-300"}`} />
+                          {r.is_active ? "Active" : "Inactive"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </>
+    );
+  }
+
+  return null;
 }
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
@@ -2098,20 +2297,10 @@ export default function EmployeeManagerMappingPage() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-6xl mx-auto">
-        {/* Header with current module name - no redundant tabs */}
-        <div className="mb-8 animate-slide-up">
-          <div className="flex items-center gap-3">
-            {currentTabConfig?.icon}
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight text-slate-900 animate-text-fade">
-                {currentTabLabel}
-              </h1>
-            </div>
-          </div>
-          <p className="text-slate-500 text-sm mt-2 animate-text-fade" style={{ animationDelay: "0.1s" }}>
-            Manage {sidebarLabel.toLowerCase()}
-          </p>
+      <div className="max-w-5xl mx-auto">
+        {/* Header */}
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Administration</h1>
         </div>
 
         {/* Content area - tabs handled via sidebar navigation */}

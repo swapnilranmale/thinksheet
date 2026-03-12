@@ -490,7 +490,7 @@ export default function EmployeeManagementPage() {
                     <SelectTrigger className="w-48 h-10 rounded-lg border-slate-300 hover:border-slate-400 transition-colors duration-200">
                       <SelectValue placeholder="Filter by team" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent searchable>
                       <SelectItem value="all">All My Teams</SelectItem>
                       {teams.map(t => (
                         <SelectItem key={t._id} value={t._id}>{t.team_name}</SelectItem>
@@ -685,7 +685,7 @@ export default function EmployeeManagementPage() {
                   <SelectTrigger className={createErrors.team_id ? "border-red-400 bg-red-50" : ""}>
                     <SelectValue placeholder="Select team..." />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent searchable>
                     {teams.map(t => <SelectItem key={t._id} value={t._id}>{t.team_name}</SelectItem>)}
                   </SelectContent>
                 </Select>
@@ -772,7 +772,7 @@ export default function EmployeeManagementPage() {
                     <SelectTrigger>
                       <SelectValue placeholder="Select team..." />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent searchable>
                       {teams.map(t => <SelectItem key={t._id} value={t._id}>{t.team_name}</SelectItem>)}
                     </SelectContent>
                   </Select>

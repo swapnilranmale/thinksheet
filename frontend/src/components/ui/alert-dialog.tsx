@@ -1,6 +1,10 @@
-import { HTMLAttributes } from "react";
+import { createContext, useContext, HTMLAttributes } from "react";
 import { clsx } from "clsx";
 import { Button } from "./button";
+
+const AlertDialogContext = createContext<{ onOpenChange: (open: boolean) => void }>({
+  onOpenChange: () => {},
+});
 
 interface AlertDialogProps {
   open: boolean;
@@ -11,10 +15,12 @@ interface AlertDialogProps {
 export function AlertDialog({ open, onOpenChange, children }: AlertDialogProps) {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="fixed inset-0 bg-black/50" onClick={() => onOpenChange(false)} />
-      {children}
-    </div>
+    <AlertDialogContext.Provider value={{ onOpenChange }}>
+      <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 bg-black/50" onClick={() => onOpenChange(false)} />
+        {children}
+      </div>
+    </AlertDialogContext.Provider>
   );
 }
 
@@ -60,9 +66,18 @@ export function AlertDialogAction({ className, children, ...props }: AlertDialog
   );
 }
 
-export function AlertDialogCancel({ className, children, ...props }: AlertDialogActionProps) {
+export function AlertDialogCancel({ className, children, onClick, ...props }: AlertDialogActionProps) {
+  const { onOpenChange } = useContext(AlertDialogContext);
   return (
-    <Button variant="outline" className={className} {...props}>
+    <Button
+      variant="outline"
+      className={className}
+      onClick={(e) => {
+        onOpenChange(false);
+        onClick?.(e);
+      }}
+      {...props}
+    >
       {children}
     </Button>
   );

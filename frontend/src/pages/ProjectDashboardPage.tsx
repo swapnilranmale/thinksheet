@@ -161,7 +161,7 @@ export default function ProjectDashboardPage() {
                 <SelectTrigger className="w-36 h-9">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent searchable>
                   {MONTHS.map((m, i) => (
                     <SelectItem key={i + 1} value={String(i + 1)}>{m}</SelectItem>
                   ))}
@@ -171,7 +171,7 @@ export default function ProjectDashboardPage() {
                 <SelectTrigger className="w-24 h-9">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent searchable>
                   {yearOptions.map(y => (
                     <SelectItem key={y} value={String(y)}>{y}</SelectItem>
                   ))}
