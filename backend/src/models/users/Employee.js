@@ -51,7 +51,9 @@ const employeeSchema = new mongoose.Schema({
     timestamps: true
 });
 
+// Unique email per tenant (for User auth/lookup)
 employeeSchema.index({ official_email: 1, tenant_id: 1 }, { unique: true });
-employeeSchema.index({ unique_id: 1, tenant_id: 1 });
+// Unique Streamline employee code per tenant (for Streamline sync to prevent duplicates)
+employeeSchema.index({ unique_id: 1, tenant_id: 1 }, { unique: true });
 
 export default mongoose.model('Employee', employeeSchema);
