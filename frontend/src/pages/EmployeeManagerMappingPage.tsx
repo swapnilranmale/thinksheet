@@ -57,6 +57,7 @@ import {
   IdCard,
   User,
   Lock,
+  MoreVertical,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -330,6 +331,8 @@ function ManagersTab() {
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [teams, setTeams] = useState<StreamlineTeam[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   // Reset password state
   const [resetTarget, setResetTarget] = useState<ManagerRecord | null>(null);
@@ -426,17 +429,36 @@ function ManagersTab() {
 
   const totalTeams = new Set(managers.flatMap(m => m.team_ids || [])).size;
 
+  const filteredManagers = searchQuery.trim()
+    ? managers.filter(m =>
+        m.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        m.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (m.designation || "").toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : managers;
+
   return (
     <div>
       {/* Toolbar */}
       <div className="flex items-center justify-between mb-5 gap-3 flex-wrap">
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1.5 text-sm text-slate-500">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          {/* Search */}
+          <div className="relative min-w-[220px] max-w-xs">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search managers…"
+              className="w-full h-9 pl-9 pr-3 rounded-lg border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#217346]/50 focus:border-[#217346] transition-all hover:border-slate-400"
+            />
+          </div>
+          <div className="flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap">
             <Users className="w-4 h-4 text-[#217346]" />
-            <span><strong className="text-slate-700">{managers.length}</strong> manager{managers.length !== 1 ? "s" : ""}</span>
+            <span><strong className="text-slate-700">{filteredManagers.length}</strong> manager{filteredManagers.length !== 1 ? "s" : ""}</span>
           </div>
           <div className="w-px h-4 bg-slate-200" />
-          <div className="flex items-center gap-1.5 text-sm text-slate-500">
+          <div className="flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap">
             <Building2 className="w-4 h-4 text-[#217346]" />
             <span><strong className="text-slate-700">{totalTeams}</strong> team{totalTeams !== 1 ? "s" : ""} assigned</span>
           </div>
@@ -464,11 +486,18 @@ function ManagersTab() {
           <p className="font-medium text-slate-600">No managers yet</p>
           <p className="text-sm mt-1 text-slate-400">Click "Add Manager" to create the first manager account</p>
         </div>
+      ) : filteredManagers.length === 0 ? (
+        <div className="border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center py-16 text-slate-400">
+          <Shield className="w-10 h-10 mb-3 opacity-30" />
+          <p className="font-medium text-slate-600">No managers match your search</p>
+          <p className="text-sm mt-1">Try a different search term</p>
+        </div>
       ) : (
         <div className="space-y-3">
-          {managers.map((mgr) => {
+          {filteredManagers.map((mgr) => {
             const teamNames = getTeamNames(mgr.team_ids);
             const isActive = mgr.is_active !== false;
+            const menuOpen = openMenuId === mgr._id;
             return (
               <div
                 key={mgr._id}
@@ -515,22 +544,35 @@ function ManagersTab() {
                   )}
                 </div>
 
-                {/* Actions */}
-                <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                {/* Three-dots action menu */}
+                <div className="relative shrink-0">
                   <button
-                    onClick={() => openEditManager(mgr)}
-                    className="p-2 rounded-lg hover:bg-[#217346]/10 text-slate-400 hover:text-[#217346] transition-colors"
-                    title="Edit manager"
+                    onClick={() => setOpenMenuId(menuOpen ? null : mgr._id)}
+                    className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors"
                   >
-                    <Pencil className="w-4 h-4" />
+                    <MoreVertical className="w-4 h-4" />
                   </button>
-                  <button
-                    onClick={() => setResetTarget(mgr)}
-                    className="p-2 rounded-lg hover:bg-orange-50 text-slate-400 hover:text-orange-600 transition-colors"
-                    title="Reset password"
-                  >
-                    <KeyRound className="w-4 h-4" />
-                  </button>
+                  {menuOpen && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setOpenMenuId(null)} />
+                      <div className="absolute right-0 top-9 z-20 bg-white border border-slate-200 rounded-xl shadow-lg py-1 min-w-[160px]">
+                        <button
+                          onClick={() => { setOpenMenuId(null); openEditManager(mgr); }}
+                          className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                        >
+                          <Pencil className="w-4 h-4 text-[#217346]" />
+                          Edit Manager
+                        </button>
+                        <button
+                          onClick={() => { setOpenMenuId(null); setResetTarget(mgr); }}
+                          className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                        >
+                          <KeyRound className="w-4 h-4 text-orange-500" />
+                          Reset Password
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             );
@@ -692,6 +734,7 @@ function EmployeesTab() {
   const [loading, setLoading] = useState(true);
   const [filterTeamId, setFilterTeamId] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   // Upload state
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -1002,28 +1045,41 @@ function EmployeesTab() {
                         )}
                       </td>
                       <td className="px-5 py-3.5 text-right">
-                        <div className="flex items-center gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="relative flex justify-end">
                           <button
-                            onClick={() => setViewTarget(emp)}
-                            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors"
-                            title="View employee"
+                            onClick={() => setOpenMenuId(openMenuId === emp._id ? null : emp._id)}
+                            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
                           >
-                            <Eye className="w-4 h-4" />
+                            <MoreVertical className="w-4 h-4" />
                           </button>
-                          <button
-                            onClick={() => openEdit(emp)}
-                            className="p-1.5 rounded-lg hover:bg-[#217346]/10 text-slate-400 hover:text-[#217346] transition-colors"
-                            title="Edit employee"
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => setResetTarget(emp)}
-                            className="p-1.5 rounded-lg hover:bg-orange-50 text-slate-400 hover:text-orange-600 transition-colors"
-                            title="Reset password"
-                          >
-                            <KeyRound className="w-4 h-4" />
-                          </button>
+                          {openMenuId === emp._id && (
+                            <>
+                              <div className="fixed inset-0 z-10" onClick={() => setOpenMenuId(null)} />
+                              <div className="absolute right-0 top-8 z-20 bg-white border border-slate-200 rounded-xl shadow-lg py-1 min-w-[160px]">
+                                <button
+                                  onClick={() => { setOpenMenuId(null); setViewTarget(emp); }}
+                                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                                >
+                                  <Eye className="w-4 h-4 text-slate-500" />
+                                  View
+                                </button>
+                                <button
+                                  onClick={() => { setOpenMenuId(null); openEdit(emp); }}
+                                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                                >
+                                  <Pencil className="w-4 h-4 text-[#217346]" />
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={() => { setOpenMenuId(null); setResetTarget(emp); }}
+                                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                                >
+                                  <KeyRound className="w-4 h-4 text-orange-500" />
+                                  Reset Password
+                                </button>
+                              </div>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1045,16 +1101,29 @@ function EmployeesTab() {
                     <p className="font-semibold text-slate-900 text-sm">{emp.employee_name}</p>
                     {emp.designation && <p className="text-xs text-slate-400">{emp.designation}</p>}
                   </div>
-                  <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => setViewTarget(emp)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors" title="View">
-                      <Eye className="w-4 h-4" />
+                  <div className="relative shrink-0">
+                    <button
+                      onClick={() => setOpenMenuId(openMenuId === emp._id ? null : emp._id)}
+                      className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+                    >
+                      <MoreVertical className="w-4 h-4" />
                     </button>
-                    <button onClick={() => openEdit(emp)} className="p-1.5 rounded-lg hover:bg-[#217346]/10 text-slate-400 hover:text-[#217346] transition-colors" title="Edit">
-                      <Pencil className="w-4 h-4" />
-                    </button>
-                    <button onClick={() => setResetTarget(emp)} className="p-1.5 rounded-lg hover:bg-orange-50 text-slate-400 hover:text-orange-600 transition-colors" title="Reset password">
-                      <KeyRound className="w-4 h-4" />
-                    </button>
+                    {openMenuId === emp._id && (
+                      <>
+                        <div className="fixed inset-0 z-10" onClick={() => setOpenMenuId(null)} />
+                        <div className="absolute right-0 top-8 z-20 bg-white border border-slate-200 rounded-xl shadow-lg py-1 min-w-[160px]">
+                          <button onClick={() => { setOpenMenuId(null); setViewTarget(emp); }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
+                            <Eye className="w-4 h-4 text-slate-500" />View
+                          </button>
+                          <button onClick={() => { setOpenMenuId(null); openEdit(emp); }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
+                            <Pencil className="w-4 h-4 text-[#217346]" />Edit
+                          </button>
+                          <button onClick={() => { setOpenMenuId(null); setResetTarget(emp); }} className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
+                            <KeyRound className="w-4 h-4 text-orange-500" />Reset Password
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
                 <div className="mt-2 space-y-1 pl-12">
@@ -2300,7 +2369,7 @@ export default function EmployeeManagerMappingPage() {
       <div className="max-w-5xl mx-auto">
         {/* Header */}
         <div className="mb-6">
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Administration</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">{currentTabLabel}</h1>
         </div>
 
         {/* Content area - tabs handled via sidebar navigation */}

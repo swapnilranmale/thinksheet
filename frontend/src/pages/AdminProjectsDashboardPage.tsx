@@ -15,6 +15,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CalendarDays,
+  Download,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -27,6 +28,13 @@ import {
 import { clsx } from "clsx";
 import { getInitials, fmtDate, statusRowBg, statusBadgeClass, getDaysInMonth, toDateKey } from "@/lib/utils";
 import type { DayStatus } from "@/services/timesheet";
+import {
+  buildExportRows,
+  exportToXLSX,
+  exportToCSV,
+  exportToPDF,
+  type ExportFormat,
+} from "@/lib/timesheetExport";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -178,6 +186,19 @@ function EmployeeTimesheetView({ member, projectName, clientName, month, year, o
   const [loading, setLoading] = useState(true);
   const [timesheet, setTimesheet] = useState<Timesheet | null>(null);
 
+  // Export state — default to full month range
+  const monthStart = new Date(year, month - 1, 1);
+  const monthEnd = new Date(year, month, 0);
+  const [exportFormat, setExportFormat] = useState<ExportFormat>("xlsx");
+  const [exportFrom, setExportFrom] = useState(() => monthStart.toISOString().split("T")[0]);
+  const [exportTo, setExportTo] = useState(() => monthEnd.toISOString().split("T")[0]);
+
+  // Reset date range when month/year changes
+  useEffect(() => {
+    setExportFrom(new Date(year, month - 1, 1).toISOString().split("T")[0]);
+    setExportTo(new Date(year, month, 0).toISOString().split("T")[0]);
+  }, [month, year]);
+
   useEffect(() => {
     setLoading(true);
     managerTimesheetService.getEmployeeTimesheet(member.employee_id, month, year)
@@ -186,7 +207,7 @@ function EmployeeTimesheetView({ member, projectName, clientName, month, year, o
       .finally(() => setLoading(false));
   }, [member.employee_id, month, year]);
 
-  const days = getDaysInMonth(year, month);
+  const days = getDaysInMonth(year, month - 1); // month is 1-indexed; getDaysInMonth expects 0-indexed
 
   // Build cell map from entries
   const cellMap: Record<string, { status: DayStatus; tasks: string; billable_hours: number }> = {};
@@ -202,45 +223,73 @@ function EmployeeTimesheetView({ member, projectName, clientName, month, year, o
   }
 
   function getCell(key: string) {
-    return cellMap[key] ?? { status: "Working" as DayStatus, tasks: "", billable_hours: 0 };
+    return cellMap[key] ?? null;
   }
 
   const totalBillable = Object.values(cellMap).reduce((s, c) => s + (c.billable_hours || 0), 0);
   const workingDays = Object.values(cellMap).filter(c => c.status === "Working" || c.status === "Extra Working").length;
   const isSubmitted = member.status === "submitted";
 
+  function handleExport() {
+    const from = new Date(exportFrom);
+    const to = new Date(exportTo);
+    if (from > to) { toast.error("Start date must be before end date"); return; }
+    const rows = buildExportRows(cellMap, from, to);
+    if (rows.length === 0) { toast.error("No timesheet data in selected date range"); return; }
+    const safeEmployee = member.employee_name.replace(/[^a-z0-9]/gi, "_");
+    const safeProject = projectName.replace(/[^a-z0-9]/gi, "_");
+    const filename = `Timesheet_${safeEmployee}_${safeProject}_${exportFrom}_to_${exportTo}`;
+    const monthLabel = `${MONTHS[month - 1]} ${year}`;
+    if (exportFormat === "xlsx") exportToXLSX(rows, filename);
+    else if (exportFormat === "csv") exportToCSV(rows, filename);
+    else exportToPDF(rows, filename, { projectName, monthLabel, totalBillable });
+  }
+
   return (
     <div className="flex flex-col gap-4">
-      {/* Back breadcrumb */}
-      <button
-        onClick={onBack}
-        className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 transition-colors w-fit"
-      >
-        <ArrowLeft className="w-4 h-4" />
-        Back to {projectName}
-      </button>
-
-      {/* Header */}
-      <div className="flex items-center gap-4">
-        <div className="w-11 h-11 rounded-full bg-[#217346]/10 flex items-center justify-center text-base font-bold text-[#217346] shrink-0">
-          {getInitials(member.employee_name)}
+      {/* Export toolbar */}
+      <div className="flex items-center justify-end gap-2">
+        <div className="flex items-center bg-white border border-slate-200 rounded-lg overflow-hidden divide-x divide-slate-100">
+          <div className="flex items-center gap-1.5 px-3 py-1.5">
+            <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">From</span>
+            <input
+              type="date"
+              value={exportFrom}
+              min={new Date(year, month - 1, 1).toISOString().split("T")[0]}
+              max={exportTo}
+              onChange={e => setExportFrom(e.target.value)}
+              className="text-xs text-slate-700 bg-transparent focus:outline-none w-[118px]"
+            />
+          </div>
+          <div className="flex items-center gap-1.5 px-3 py-1.5">
+            <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">To</span>
+            <input
+              type="date"
+              value={exportTo}
+              min={exportFrom}
+              max={new Date(year, month, 0).toISOString().split("T")[0]}
+              onChange={e => setExportTo(e.target.value)}
+              className="text-xs text-slate-700 bg-transparent focus:outline-none w-[118px]"
+            />
+          </div>
         </div>
-        <div className="flex-1 min-w-0">
-          <h2 className="text-xl font-bold text-slate-900">{member.employee_name}</h2>
-          <p className="text-sm text-slate-500 mt-0.5">
-            {member.designation || "—"} · {projectName}
-            {clientName ? ` · ${clientName}` : ""}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {isSubmitted && (
-            <span className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700">
-              <CheckCircle2 className="w-3.5 h-3.5" /> Submitted
-            </span>
-          )}
-        </div>
+        <select
+          value={exportFormat}
+          onChange={e => setExportFormat(e.target.value as ExportFormat)}
+          className="border border-slate-200 bg-white rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#217346] cursor-pointer h-[34px]"
+        >
+          <option value="xlsx">XLSX</option>
+          <option value="csv">CSV</option>
+          <option value="pdf">PDF</option>
+        </select>
+        <button
+          onClick={handleExport}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-[#217346] text-white rounded-lg text-xs font-semibold hover:bg-[#185c37] transition-colors shrink-0 h-[34px]"
+        >
+          <Download className="w-3.5 h-3.5" />
+          Export
+        </button>
       </div>
-
       {/* KPI strip */}
       <div className="grid grid-cols-3 gap-3">
         <div className="bg-white border rounded-lg px-4 py-3">
@@ -278,6 +327,12 @@ function EmployeeTimesheetView({ member, projectName, clientName, month, year, o
           <Loader2 className="w-5 h-5 animate-spin" />
           <span>Loading timesheet…</span>
         </div>
+      ) : !timesheet ? (
+        <div className="flex flex-col items-center justify-center py-20 bg-white border rounded-lg text-slate-400">
+          <CircleDashed className="w-10 h-10 mb-3 opacity-20" />
+          <p className="font-medium text-slate-500">No timesheet found</p>
+          <p className="text-sm mt-1">This employee hasn't filled a timesheet for {MONTHS[month - 1]} {year}</p>
+        </div>
       ) : (
         <div className="bg-white border rounded-lg overflow-hidden flex flex-col">
           <div className="overflow-auto">
@@ -299,7 +354,7 @@ function EmployeeTimesheetView({ member, projectName, clientName, month, year, o
                   const today = isToday(day);
                   const dayName = DAY_NAMES[day.getDay()];
                   const dateDisplay = `${day.getDate()} ${MONTHS[day.getMonth()]} ${day.getFullYear()}`;
-                  const rowBg = statusRowBg(cell.status, today);
+                  const rowBg = cell ? statusRowBg(cell.status, today) : (today ? "bg-amber-50" : "bg-white");
 
                   return (
                     <tr
@@ -314,17 +369,21 @@ function EmployeeTimesheetView({ member, projectName, clientName, month, year, o
 
                       {/* Status */}
                       <td style={td} className="text-center">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold border ${statusBadgeClass(cell.status)}`}>
-                          {cell.status}
-                        </span>
+                        {cell ? (
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold border ${statusBadgeClass(cell.status)}`}>
+                            {cell.status}
+                          </span>
+                        ) : (
+                          <span className="text-gray-300 text-[10px]">—</span>
+                        )}
                       </td>
 
                       {/* Date */}
                       <td
                         style={td}
                         className={`font-medium whitespace-nowrap ${
-                          cell.status === "Holiday" ? "text-red-600" :
-                          cell.status === "On leave" ? "text-orange-600" :
+                          cell?.status === "Holiday" ? "text-red-600" :
+                          cell?.status === "On leave" ? "text-orange-600" :
                           today ? "text-amber-700 font-bold" : "text-gray-700"
                         }`}
                       >
@@ -335,8 +394,8 @@ function EmployeeTimesheetView({ member, projectName, clientName, month, year, o
                       <td
                         style={td}
                         className={`font-medium ${
-                          cell.status === "Holiday" ? "text-red-500" :
-                          cell.status === "On leave" ? "text-orange-500" :
+                          cell?.status === "Holiday" ? "text-red-500" :
+                          cell?.status === "On leave" ? "text-orange-500" :
                           "text-gray-500"
                         }`}
                       >
@@ -345,7 +404,7 @@ function EmployeeTimesheetView({ member, projectName, clientName, month, year, o
 
                       {/* Task Description */}
                       <td style={{ ...td, padding: "5px 8px" }}>
-                        {cell.tasks ? (
+                        {cell?.tasks ? (
                           cell.tasks.includes("\n") ? (
                             <ul className="space-y-0.5 list-none">
                               {cell.tasks.split("\n").filter(Boolean).map((t, ti) => (
@@ -365,8 +424,8 @@ function EmployeeTimesheetView({ member, projectName, clientName, month, year, o
 
                       {/* Billable Hours */}
                       <td style={td} className="text-center">
-                        <span className={`font-mono font-semibold ${cell.billable_hours > 0 ? "text-gray-800" : "text-gray-400"}`}>
-                          {cell.billable_hours}
+                        <span className={`font-mono font-semibold ${cell && cell.billable_hours > 0 ? "text-gray-800" : "text-gray-400"}`}>
+                          {cell ? cell.billable_hours : "—"}
                         </span>
                       </td>
                     </tr>
