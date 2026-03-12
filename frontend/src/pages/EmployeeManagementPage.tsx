@@ -106,21 +106,25 @@ function ProjectsTab({ onProjectClick }: { onProjectClick: (proj: ResourceMaster
 
   return (
     <div>
-      <p className="text-sm text-slate-500 mb-5">
-        {projects.length} project{projects.length !== 1 ? "s" : ""} · live from Streamline360 Resource Master
+      <p className="text-sm text-slate-500 mb-6 font-medium">
+        <span className="bg-[#217346]/10 text-[#217346] px-3 py-1 rounded-full inline-block font-semibold">
+          {projects.length} project{projects.length !== 1 ? "s" : ""}
+        </span>
+        <span className="ml-2 text-slate-400">live from Streamline360 Resource Master</span>
       </p>
 
-      <div className="space-y-3">
-        {projects.map(proj => (
+      <div className="space-y-3.5">
+        {projects.map((proj, index) => (
           <div
             key={proj.project_id}
-            className="bg-white border border-slate-200 rounded-xl overflow-hidden"
+            className="bg-white border border-slate-200 rounded-xl overflow-hidden hover:border-[#217346]/30 hover:shadow-lg hover:shadow-[#217346]/10 transition-all duration-300 group animate-slide-up"
+            style={{ animationDelay: `${index * 0.05}s` }}
           >
             <div
-              className="px-5 py-4 flex items-center gap-4 cursor-pointer hover:bg-slate-50 transition-colors"
+              className="px-6 py-5 flex items-center gap-4 cursor-pointer transition-all duration-300"
               onClick={() => onProjectClick(proj)}
             >
-              <div className="w-11 h-11 rounded-xl bg-[#217346]/10 flex items-center justify-center shrink-0">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#217346]/20 to-emerald-300/10 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform duration-300 border border-[#217346]/10">
                 <FolderOpen className="w-5 h-5 text-[#217346]" />
               </div>
 
@@ -410,37 +414,44 @@ export default function EmployeeManagementPage() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-5xl mx-auto">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">My Workspace</h1>
-          <p className="text-slate-500 text-sm mt-1">
+      <div className="max-w-6xl mx-auto">
+        {/* Header with animation */}
+        <div className="mb-8 animate-slide-up">
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900 animate-text-fade">My Workspace</h1>
+          <p className="text-slate-500 text-sm mt-2 animate-text-fade" style={{ animationDelay: "0.1s" }}>
             Employees and projects in your assigned teams
           </p>
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-1 bg-slate-100 rounded-xl p-1 w-fit mb-6">
+        {/* Tabs with enhanced styling and animations */}
+        <div className="flex gap-2 mb-8 animate-slide-up" style={{ animationDelay: "0.1s" }}>
           <button
             onClick={() => setActiveTab("employees")}
-            className={`flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-medium transition-all ${
+            className={`flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all duration-300 relative group ${
               activeTab === "employees"
-                ? "bg-white text-slate-900 shadow-sm"
-                : "text-slate-500 hover:text-slate-700"
+                ? "bg-white text-[#217346] shadow-lg shadow-[#217346]/20 border border-[#217346]/20"
+                : "text-slate-500 hover:text-slate-700 bg-slate-50 hover:bg-white border border-transparent hover:border-slate-200"
             }`}
           >
-            <Users className="w-4 h-4" />
+            <Users className={`w-4 h-4 transition-transform duration-300 ${activeTab === "employees" ? "scale-110" : "group-hover:scale-105"}`} />
             My Employees
+            {activeTab === "employees" && (
+              <div className="absolute bottom-0 left-0 right-0 h-1 bg-[#217346] rounded-full animate-slide-up" />
+            )}
           </button>
           <button
             onClick={() => setActiveTab("projects")}
-            className={`flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-medium transition-all ${
+            className={`flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all duration-300 relative group ${
               activeTab === "projects"
-                ? "bg-white text-slate-900 shadow-sm"
-                : "text-slate-500 hover:text-slate-700"
+                ? "bg-white text-[#217346] shadow-lg shadow-[#217346]/20 border border-[#217346]/20"
+                : "text-slate-500 hover:text-slate-700 bg-slate-50 hover:bg-white border border-transparent hover:border-slate-200"
             }`}
           >
-            <FolderOpen className="w-4 h-4" />
+            <FolderOpen className={`w-4 h-4 transition-transform duration-300 ${activeTab === "projects" ? "scale-110" : "group-hover:scale-105"}`} />
             My Projects
+            {activeTab === "projects" && (
+              <div className="absolute bottom-0 left-0 right-0 h-1 bg-[#217346] rounded-full animate-slide-up" />
+            )}
           </button>
         </div>
 
@@ -458,8 +469,8 @@ export default function EmployeeManagementPage() {
         {/* ── Employees Tab ── */}
         {activeTab === "employees" && (
           <>
-            {/* Toolbar */}
-            <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
+            {/* Toolbar with animation */}
+            <div className="flex items-center justify-between mb-6 gap-4 flex-wrap animate-slide-up" style={{ animationDelay: "0.15s" }}>
               <div className="flex items-center gap-3 flex-wrap flex-1 min-w-0">
                 {/* Search */}
                 <div className="relative flex-1 min-w-[200px] max-w-xs">
@@ -469,14 +480,14 @@ export default function EmployeeManagementPage() {
                     value={searchQuery}
                     onChange={e => setSearchQuery(e.target.value)}
                     placeholder="Search by name, email or ID…"
-                    className="w-full h-9 pl-9 pr-3 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346] bg-white"
+                    className="w-full h-10 pl-9 pr-4 rounded-lg border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#217346]/50 focus:border-[#217346] transition-all duration-200 hover:border-slate-400"
                   />
                 </div>
 
                 {/* Team filter */}
                 {teams.length > 1 && (
                   <Select value={filterTeamId} onValueChange={setFilterTeamId}>
-                    <SelectTrigger className="w-44 h-9">
+                    <SelectTrigger className="w-48 h-10 rounded-lg border-slate-300 hover:border-slate-400 transition-colors duration-200">
                       <SelectValue placeholder="Filter by team" />
                     </SelectTrigger>
                     <SelectContent>
@@ -488,12 +499,12 @@ export default function EmployeeManagementPage() {
                   </Select>
                 )}
 
-                <p className="text-sm text-slate-400 whitespace-nowrap">
+                <p className="text-sm text-slate-500 whitespace-nowrap font-medium bg-slate-50 px-3 py-2 rounded-lg border border-slate-200">
                   {filtered.length} employee{filtered.length !== 1 ? "s" : ""}
                 </p>
               </div>
 
-              <Button onClick={openCreateDialog} className="bg-[#217346] hover:bg-[#185c37] text-white gap-2 shrink-0">
+              <Button onClick={openCreateDialog} className="bg-[#217346] hover:bg-[#185c37] text-white gap-2 shrink-0 shadow-lg shadow-[#217346]/20 hover:shadow-xl hover:shadow-[#217346]/30 transition-all duration-300 h-10">
                 <Plus className="w-4 h-4" />
                 Add Employee
               </Button>
@@ -521,14 +532,15 @@ export default function EmployeeManagementPage() {
                 </p>
               </div>
             ) : (
-              <div className="space-y-2.5">
-                {filtered.map(emp => (
+              <div className="space-y-3">
+                {filtered.map((emp, index) => (
                   <div
                     key={emp._id}
-                    className="bg-white border border-slate-200 rounded-xl px-5 py-4 flex items-center gap-4 hover:border-slate-300 transition-colors"
+                    className="bg-white border border-slate-200 rounded-xl px-6 py-4 flex items-center gap-4 hover:border-[#217346]/30 hover:shadow-lg hover:shadow-[#217346]/10 transition-all duration-300 group animate-slide-up"
+                    style={{ animationDelay: `${index * 0.05}s` }}
                   >
-                    {/* Avatar */}
-                    <div className="w-11 h-11 rounded-full bg-[#217346]/10 flex items-center justify-center shrink-0">
+                    {/* Avatar with animation */}
+                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#217346]/20 to-emerald-300/10 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform duration-300 border border-[#217346]/10">
                       <span className="text-sm font-bold text-[#217346]">{getInitials(emp.employee_name)}</span>
                     </div>
 
@@ -537,45 +549,45 @@ export default function EmployeeManagementPage() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="font-semibold text-slate-900">{emp.employee_name}</p>
                         {emp.designation && (
-                          <span className="text-xs text-slate-400 flex items-center gap-1">
+                          <span className="text-xs text-slate-500 flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-full">
                             <Briefcase className="w-3 h-3" />
                             {emp.designation}
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-4 mt-0.5 flex-wrap">
-                        <span className="text-xs text-slate-500 flex items-center gap-1">
-                          <Mail className="w-3 h-3" />
+                      <div className="flex items-center gap-4 mt-1.5 flex-wrap">
+                        <span className="text-xs text-slate-600 flex items-center gap-1.5">
+                          <Mail className="w-3 h-3 text-[#217346]/60" />
                           {emp.official_email}
                         </span>
-                        <span className="text-xs text-slate-500">ID: {emp.unique_id}</span>
+                        <span className="text-xs text-slate-500 font-mono bg-slate-50 px-2 py-1 rounded">ID: {emp.unique_id}</span>
                       </div>
                       {emp.team_name && (
-                        <Badge variant="outline" className="mt-1.5 text-xs border-blue-200 bg-blue-50 text-blue-700">
+                        <Badge variant="outline" className="mt-2 text-xs border-[#217346]/20 bg-[#217346]/5 text-[#217346] font-medium">
                           {emp.team_name}
                         </Badge>
                       )}
                     </div>
 
-                    {/* Actions */}
-                    <div className="flex items-center gap-1 shrink-0">
+                    {/* Actions with animation */}
+                    <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                       <button
                         onClick={() => openEditDialog(emp)}
-                        className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-[#217346] transition-colors"
+                        className="p-2.5 rounded-lg hover:bg-[#217346]/10 text-slate-400 hover:text-[#217346] transition-all duration-300 hover:scale-110"
                         title="Edit employee"
                       >
                         <Pencil className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => setResetTarget(emp)}
-                        className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-orange-600 transition-colors"
+                        className="p-2.5 rounded-lg hover:bg-orange-500/10 text-slate-400 hover:text-orange-600 transition-all duration-300 hover:scale-110"
                         title="Reset password"
                       >
                         <KeyRound className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => setDeleteTarget(emp)}
-                        className="p-2 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors"
+                        className="p-2.5 rounded-lg hover:bg-red-500/10 text-slate-400 hover:text-red-500 transition-all duration-300 hover:scale-110"
                         title="Delete employee"
                       >
                         <X className="w-4 h-4" />

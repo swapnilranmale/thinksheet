@@ -1862,10 +1862,10 @@ function ProjectsTab() {
 
 type Tab = "managers" | "employees" | "logs" | "projects";
 
-const TAB_CONFIG: { id: Tab; label: string; icon: ReactNode }[] = [
+const TAB_CONFIG: { id: Tab; label: string; displayLabel?: string; icon: ReactNode }[] = [
   { id: "managers", label: "Managers", icon: <Shield className="w-4 h-4" /> },
   { id: "employees", label: "Employees", icon: <Users className="w-4 h-4" /> },
-  { id: "projects", label: "Projects", icon: <FolderOpen className="w-4 h-4" /> },
+  { id: "projects", label: "Projects", displayLabel: "Clients & Projects", icon: <FolderOpen className="w-4 h-4" /> },
   { id: "logs", label: "Activity Logs", icon: <ScrollText className="w-4 h-4" /> },
 ];
 
@@ -1880,37 +1880,30 @@ export default function EmployeeManagerMappingPage() {
     navigate(`/timesheet/mapping?tab=${tab}`, { replace: true });
   }
 
+  // Get the current tab label for header
+  const currentTabConfig = TAB_CONFIG.find(tab => tab.id === activeTab);
+  const currentTabLabel = currentTabConfig?.displayLabel || currentTabConfig?.label || "Administration";
+  const sidebarLabel = currentTabConfig?.label || "Administration";
+
   return (
     <DashboardLayout>
-      <div className="max-w-5xl mx-auto">
-        {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Administration</h1>
-          <p className="text-slate-500 text-sm mt-1">
-            Manage managers, employees, and project assignments
+      <div className="max-w-6xl mx-auto">
+        {/* Header with current module name - no redundant tabs */}
+        <div className="mb-8 animate-slide-up">
+          <div className="flex items-center gap-3">
+            {currentTabConfig?.icon}
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight text-slate-900 animate-text-fade">
+                {currentTabLabel}
+              </h1>
+            </div>
+          </div>
+          <p className="text-slate-500 text-sm mt-2 animate-text-fade" style={{ animationDelay: "0.1s" }}>
+            Manage {sidebarLabel.toLowerCase()}
           </p>
         </div>
 
-        {/* Tab bar */}
-        <div className="overflow-x-auto mb-6 pb-0.5">
-          <div className="flex gap-1 bg-slate-100 rounded-xl p-1 w-fit min-w-full sm:min-w-0">
-            {TAB_CONFIG.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => switchTab(tab.id)}
-                className={`flex items-center gap-2 px-4 sm:px-5 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap flex-1 sm:flex-none justify-center ${
-                  activeTab === tab.id
-                    ? "bg-white text-slate-900 shadow-sm"
-                    : "text-slate-500 hover:text-slate-700"
-                }`}
-              >
-                {tab.icon}
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
+        {/* Content area - tabs handled via sidebar navigation */}
         {activeTab === "managers" && <ManagersTab />}
         {activeTab === "employees" && <EmployeesTab />}
         {activeTab === "logs" && <LogsTab />}
