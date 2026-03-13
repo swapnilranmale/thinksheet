@@ -461,12 +461,12 @@ export default function EmployeeTimesheetPage() {
     }
   }
 
-  function handleSubmitClick() {
+  function validateCells(snapshot: CellsMap): string[] {
     const errors: string[] = [];
     let emptyTaskCount = 0;
     let zeroBillableCount = 0;
 
-    Object.entries(cells).forEach(([, c]) => {
+    Object.entries(snapshot).forEach(([, c]) => {
       if (c.status === "Working" || c.status === "Extra Working") {
         if (!c.tasks.trim()) emptyTaskCount++;
         if (!c.billable_hours || c.billable_hours <= 0) zeroBillableCount++;
@@ -480,8 +480,15 @@ export default function EmployeeTimesheetPage() {
       errors.push(`${zeroBillableCount} working day${zeroBillableCount > 1 ? "s have" : " has"} zero billable hours. Billable hours must be greater than zero for working days.`);
     }
 
+    return errors;
+  }
+
+  function handleSubmitClick() {
+    // Use ref to get the latest cells (avoids stale closure)
+    const errors = validateCells(cellsRef.current);
+
     if (errors.length > 0) {
-      toast.error(errors.join("\n"));
+      errors.forEach((e) => toast.error(e));
       return;
     }
 
@@ -490,9 +497,17 @@ export default function EmployeeTimesheetPage() {
 
   async function handleSubmitConfirmed() {
     setSubmitConfirmOpen(false);
+
+    // Double-check validation with latest cells before submitting
+    const preCheckErrors = validateCells(cellsRef.current);
+    if (preCheckErrors.length > 0) {
+      preCheckErrors.forEach((e) => toast.error(e));
+      return;
+    }
+
     setSaving(true);
     try {
-      const entries = buildEntriesFromCells(cells);
+      const entries = buildEntriesFromCells(cellsRef.current);
       const apiMonth = selectedMonth + 1;
 
       if (!timesheet) {

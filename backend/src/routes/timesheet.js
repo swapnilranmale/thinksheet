@@ -324,22 +324,34 @@ router.get('/team', ...auth, authorize(['MANAGER', 'ADMINISTRATOR']), async (req
             return res.status(400).json({ error: 'month and year are required' });
         }
 
-        // For MANAGER: only their mapped employees. For ADMINISTRATOR: all.
+        // For MANAGER: find employees in the manager's teams (via team_ids).
+        // manager_id on mappings may be null (synced from Streamline), so we
+        // use the team_id on Employee records to determine which employees
+        // belong to this manager.
         let mappings;
         if (req.user.role === 'MANAGER') {
-            mappings = await EmployeeManagerMapping.find({
+            const manager = await User.findById(req.user._id).select('team_ids').lean();
+            const teamIds = (manager?.team_ids || []).map(id => id.toString());
+
+            // Get all mappings, then filter to employees in manager's teams
+            const allMappings = await EmployeeManagerMapping.find({
                 tenant_id: tenantId,
-                manager_id: req.user._id,
                 is_deleted: { $ne: true }
             })
-                .populate('employee_id', 'employee_name official_email unique_id designation department_id')
+                .populate('employee_id', 'employee_name official_email unique_id designation department_id team_id')
                 .lean();
+
+            const teamIdSet = new Set(teamIds);
+            mappings = allMappings.filter(m => {
+                const empTeamId = m.employee_id?.team_id?.toString();
+                return empTeamId && teamIdSet.has(empTeamId);
+            });
         } else {
             mappings = await EmployeeManagerMapping.find({
                 tenant_id: tenantId,
                 is_deleted: { $ne: true }
             })
-                .populate('employee_id', 'employee_name official_email unique_id designation department_id')
+                .populate('employee_id', 'employee_name official_email unique_id designation department_id team_id')
                 .populate('manager_id', 'full_name email')
                 .lean();
         }
@@ -429,28 +441,37 @@ router.get('/project/:projectId', ...auth, authorize(['MANAGER', 'ADMINISTRATOR'
             return res.status(400).json({ error: 'Valid month and year are required' });
         }
 
-        // Find all mappings for this project (manager only sees their own mappings)
-        const filter = {
+        // Find all mappings for this project.
+        // For managers: filter by team_ids (manager_id on mappings may be null
+        // when synced from Streamline, so we match via employee team_id).
+        const projectMappings = await EmployeeManagerMapping.find({
             tenant_id: tenantId,
             project_id: projectId,
             is_deleted: { $ne: true }
-        };
-        if (req.user.role === 'MANAGER') {
-            filter.manager_id = req.user._id;
-        }
+        })
+            .populate('employee_id', 'employee_name official_email unique_id designation team_id')
+            .lean();
 
-        const mappings = await EmployeeManagerMapping.findOne({ tenant_id: tenantId, project_id: projectId, is_deleted: { $ne: true } }).lean();
-        const projectInfo = mappings ? {
+        const firstMapping = projectMappings[0];
+        const projectInfo = firstMapping ? {
             project_id: projectId,
-            project_name: mappings.project_name || '',
-            project_code: mappings.project_code || '',
-            client_id: mappings.client_id || null,
-            client_name: mappings.client_name || ''
+            project_name: firstMapping.project_name || '',
+            project_code: firstMapping.project_code || '',
+            client_id: firstMapping.client_id || null,
+            client_name: firstMapping.client_name || ''
         } : { project_id: projectId, project_name: '', project_code: '', client_id: null, client_name: '' };
 
-        const allMappings = await EmployeeManagerMapping.find(filter)
-            .populate('employee_id', 'employee_name official_email unique_id designation')
-            .lean();
+        let allMappings;
+        if (req.user.role === 'MANAGER') {
+            const manager = await User.findById(req.user._id).select('team_ids').lean();
+            const teamIdSet = new Set((manager?.team_ids || []).map(id => id.toString()));
+            allMappings = projectMappings.filter(m => {
+                const empTeamId = m.employee_id?.team_id?.toString();
+                return empTeamId && teamIdSet.has(empTeamId);
+            });
+        } else {
+            allMappings = projectMappings;
+        }
 
         const employeeEmails = allMappings.map(m => m.employee_id?.official_email).filter(Boolean);
 
@@ -524,15 +545,14 @@ router.get('/employee/:employeeId', ...auth, authorize(['MANAGER', 'ADMINISTRATO
             return res.status(400).json({ error: 'month and year are required' });
         }
 
-        // Verify manager has access to this employee
+        // Verify manager has access to this employee (via team_ids, since
+        // manager_id on mappings may be null when synced from Streamline)
         if (req.user.role === 'MANAGER') {
-            const mapping = await EmployeeManagerMapping.findOne({
-                tenant_id: tenantId,
-                manager_id: req.user._id,
-                employee_id: employeeId,
-                is_deleted: { $ne: true }
-            });
-            if (!mapping) {
+            const manager = await User.findById(req.user._id).select('team_ids').lean();
+            const teamIdSet = new Set((manager?.team_ids || []).map(id => id.toString()));
+            const emp = await Employee.findById(employeeId).select('team_id').lean();
+            const empTeamId = emp?.team_id?.toString();
+            if (!empTeamId || !teamIdSet.has(empTeamId)) {
                 return res.status(403).json({ error: 'Access denied: employee not under your management' });
             }
         }

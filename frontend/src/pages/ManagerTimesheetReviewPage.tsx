@@ -135,6 +135,19 @@ export default function ManagerTimesheetReviewPage() {
     return () => { cancelled = true; };
   }, [selectedProject, selectedMonth, selectedYear]);
 
+  // Memoised timesheet computations — must be called before any early returns
+  const timesheetStats = useMemo(() => {
+    const entries = [...(viewingTimesheet?.entries ?? [])].sort((a, b) => a.date.localeCompare(b.date));
+    return {
+      entries,
+      totalWorked:   entries.reduce((s, e) => s + (e.worked_hours   || 0), 0),
+      totalBillable: entries.reduce((s, e) => s + (e.billable_hours || 0), 0),
+      totalActual:   entries.reduce((s, e) => s + (e.actual_hours   || 0), 0),
+      completed:     entries.filter((e) => e.completed_task).length,
+      unplanned:     entries.filter((e) => e.unplanned_task).length,
+    };
+  }, [viewingTimesheet]);
+
   // ── Load individual timesheet ─────────────────────────────────────────────
 
   async function openTimesheet(member: ProjectTeamMember) {
@@ -462,33 +475,23 @@ export default function ManagerTimesheetReviewPage() {
   // VIEW 4: Individual timesheet detail
   // ════════════════════════════════════════════════════════════════════════════
 
-  // Memoised timesheet computations — only recalculate when viewingTimesheet changes
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  const timesheetStats = useMemo(() => {
-    const entries = [...(viewingTimesheet?.entries ?? [])].sort((a, b) => a.date.localeCompare(b.date));
-    return {
-      entries,
-      totalWorked:   entries.reduce((s, e) => s + (e.worked_hours   || 0), 0),
-      totalBillable: entries.reduce((s, e) => s + (e.billable_hours || 0), 0),
-      totalActual:   entries.reduce((s, e) => s + (e.actual_hours   || 0), 0),
-      completed:     entries.filter((e) => e.completed_task).length,
-      unplanned:     entries.filter((e) => e.unplanned_task).length,
-    };
-  }, [viewingTimesheet]);
-
   if (view === "timesheet" && viewingMember) {
-    const { entries, totalWorked, totalBillable, totalActual, completed, unplanned } = timesheetStats;
+    const { entries, totalBillable } = timesheetStats;
+    const workingDays = entries.filter(e => e.status === "Working" || e.status === "Extra Working").length;
 
     return (
       <DashboardLayout>
         <div className="flex-1 flex flex-col min-h-0">
           <Breadcrumb />
           <div className="flex items-center justify-between mb-4">
-            <div>
-              <h1 className="text-lg font-bold text-slate-900">{viewingMember.employee_name}</h1>
-              <p className="text-xs text-slate-500 mt-0.5">
-                {viewingMember.designation} · {viewingMember.unique_id} · {MONTHS[selectedMonth]} {selectedYear}
-              </p>
+            <div className="flex items-center gap-3">
+              <FolderOpen className="w-5 h-5 text-[#217346]" />
+              <div>
+                <h1 className="text-lg font-bold text-slate-900">{viewingMember.employee_name}</h1>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {viewingMember.designation} · {viewingMember.unique_id} · {MONTHS[selectedMonth]} {selectedYear}
+                </p>
+              </div>
             </div>
             <StatusBadge status={viewingMember.status} />
           </div>
@@ -499,24 +502,23 @@ export default function ManagerTimesheetReviewPage() {
             </div>
           ) : (
             <>
-              {/* KPI strip */}
-              <div className="grid grid-cols-6 gap-2 mb-3">
-                {[
-                  { label: "Days",      value: entries.length,      color: "" },
-                  { label: "Worked",    value: `${totalWorked}h`,   color: "text-slate-700" },
-                  { label: "Billable",  value: `${totalBillable}h`, color: "text-blue-600" },
-                  { label: "Actual",    value: `${totalActual}h`,   color: "text-violet-600" },
-                  { label: "Completed", value: completed,            color: "text-green-600" },
-                  { label: "Unplanned", value: unplanned,            color: "text-orange-500" },
-                ].map(({ label, value, color }) => (
-                  <div key={label} className="bg-white border rounded-lg px-3 py-2 flex flex-col">
-                    <span className="text-[10px] uppercase tracking-wide text-slate-400 font-medium">{label}</span>
-                    <span className={`text-xl font-bold leading-tight mt-0.5 ${color}`}>{value}</span>
-                  </div>
-                ))}
+              {/* Summary cards — matching employee view */}
+              <div className="grid grid-cols-3 gap-4 mb-4">
+                <div className="bg-white border border-slate-200 rounded-xl px-5 py-4">
+                  <p className="text-xs text-slate-400 font-medium">Total Billable Hours</p>
+                  <p className="text-2xl font-bold text-slate-900 mt-1">{totalBillable}h</p>
+                </div>
+                <div className="bg-white border border-slate-200 rounded-xl px-5 py-4">
+                  <p className="text-xs text-slate-400 font-medium">Working Days</p>
+                  <p className="text-2xl font-bold text-[#217346] mt-1">{workingDays}</p>
+                </div>
+                <div className="bg-white border border-slate-200 rounded-xl px-5 py-4">
+                  <p className="text-xs text-slate-400 font-medium">Total Worked Hours</p>
+                  <p className="text-2xl font-bold text-slate-900 mt-1">{totalBillable}h</p>
+                </div>
               </div>
 
-              {/* Excel grid */}
+              {/* Entries table — same as employee view */}
               {entries.length === 0 ? (
                 <div className="flex-1 border rounded-lg flex flex-col items-center justify-center py-16 text-slate-400 bg-white">
                   <Clock className="w-10 h-10 mb-3 opacity-25" />
@@ -524,68 +526,56 @@ export default function ManagerTimesheetReviewPage() {
                   <p className="text-sm">Employee hasn't filled in any data yet</p>
                 </div>
               ) : (
-                <div className="flex-1 border rounded-lg overflow-auto bg-white">
-                  <table className="w-full border-collapse text-xs" style={{ minWidth: 900 }}>
+                <div className="flex-1 border border-slate-200 rounded-xl overflow-auto bg-white">
+                  <table className="w-full border-collapse text-sm">
                     <thead className="sticky top-0 z-10">
-                      <tr className="bg-[#217346] text-white">
-                        {["#","Date","Day","Tasks","Worked","Billable","Actual","Done?","Unplanned?","Completion Note","Comments"].map((h, i) => (
-                          <th key={i} className={`border border-[#1a5c38] px-2 py-2 font-semibold ${
-                            i === 0 ? "w-8 text-center" : i <= 3 ? "text-left" : i <= 6 ? "text-right w-20 min-w-[80px]" : i <= 8 ? "text-center w-20 min-w-[80px]" : "text-left min-w-[200px]"
-                          }`}>{h}</th>
-                        ))}
+                      <tr className="bg-[#217346] text-white text-xs">
+                        <th className="border border-[#1a5c38] px-3 py-2.5 text-left font-semibold w-16">Sr No</th>
+                        <th className="border border-[#1a5c38] px-3 py-2.5 text-left font-semibold w-24">Status</th>
+                        <th className="border border-[#1a5c38] px-3 py-2.5 text-left font-semibold w-32">Date</th>
+                        <th className="border border-[#1a5c38] px-3 py-2.5 text-left font-semibold w-28">Day</th>
+                        <th className="border border-[#1a5c38] px-3 py-2.5 text-left font-semibold">Task Description</th>
+                        <th className="border border-[#1a5c38] px-3 py-2.5 text-right font-semibold w-32">Billable Hours</th>
                       </tr>
                     </thead>
                     <tbody>
                       {entries.map((entry, idx) => {
                         const d = new Date(entry.date);
                         const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-                        const rowBg = entry.completed_task ? "bg-green-50" : entry.unplanned_task ? "bg-orange-50" : idx % 2 === 0 ? "bg-white" : "bg-[#f5f5f5]";
+                        const isHoliday = entry.status === "Holiday";
+                        const rowBg = isHoliday ? "bg-red-50/50" : idx % 2 === 0 ? "bg-white" : "bg-slate-50/50";
                         return (
-                          <tr key={idx} className={`${rowBg} hover:bg-blue-50 transition-colors`}>
-                            <td className="border border-gray-200 px-2 py-1.5 text-center text-gray-400 font-mono">{idx + 1}</td>
-                            <td className={`border border-gray-200 px-2 py-1.5 whitespace-nowrap font-medium ${isWeekend ? "text-blue-600" : ""}`}>
-                              {d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                          <tr key={idx} className={`${rowBg} hover:bg-blue-50/50 transition-colors`}>
+                            <td className="border border-gray-200 px-3 py-2.5 text-slate-400 font-mono text-xs">{idx + 1}</td>
+                            <td className="border border-gray-200 px-3 py-2.5">
+                              {isHoliday ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-100 text-red-600">Holiday</span>
+                              ) : entry.status === "Extra Working" ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-100 text-blue-600">Extra Working</span>
+                              ) : (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-green-100 text-green-700">Working</span>
+                              )}
                             </td>
-                            <td className={`border border-gray-200 px-2 py-1.5 font-medium ${isWeekend ? "text-blue-600" : "text-gray-500"}`}>
-                              {d.toLocaleDateString("en-IN", { weekday: "short" })}
+                            <td className={`border border-gray-200 px-3 py-2.5 whitespace-nowrap font-medium text-sm ${isWeekend ? "text-red-500" : "text-slate-700"}`}>
+                              {d.toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}
                             </td>
-                            <td className="border border-gray-200 px-2 py-1.5">
+                            <td className={`border border-gray-200 px-3 py-2.5 font-medium text-sm ${isWeekend ? "text-red-500" : "text-slate-500"}`}>
+                              {d.toLocaleDateString("en-IN", { weekday: "long" })}
+                            </td>
+                            <td className="border border-gray-200 px-3 py-2.5 text-sm">
                               {!(entry.tasks?.length) ? <span className="text-gray-300">—</span>
-                                : entry.tasks.length === 1 ? <span>{entry.tasks[0]}</span>
+                                : entry.tasks.length === 1 ? <span className="text-slate-700">{entry.tasks[0]}</span>
                                 : <ul className="space-y-0.5">{entry.tasks.map((t, ti) => (
-                                    <li key={ti} className="flex items-start gap-1"><span className="text-gray-400 shrink-0">▸</span><span>{t}</span></li>
+                                    <li key={ti} className="flex items-start gap-1.5 text-slate-700"><span className="text-slate-400 shrink-0">▸</span><span>{t}</span></li>
                                   ))}</ul>}
                             </td>
-                            <td className="border border-gray-200 px-2 py-1.5 text-right font-mono font-semibold">{entry.worked_hours ?? 0}</td>
-                            <td className="border border-gray-200 px-2 py-1.5 text-right font-mono text-blue-600 font-semibold">{entry.billable_hours ?? 0}</td>
-                            <td className="border border-gray-200 px-2 py-1.5 text-right font-mono text-violet-600">{entry.actual_hours ?? 0}</td>
-                            <td className="border border-gray-200 px-2 py-1.5 text-center">
-                              {entry.completed_task
-                                ? <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-100 text-green-600 font-bold text-[10px]">✓</span>
-                                : <span className="text-gray-300">—</span>}
-                            </td>
-                            <td className="border border-gray-200 px-2 py-1.5 text-center">
-                              {entry.unplanned_task
-                                ? <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-orange-100 text-orange-600 font-semibold text-[10px] uppercase">Yes</span>
-                                : <span className="text-gray-300">—</span>}
-                            </td>
-                            <td className="border border-gray-200 px-2 py-1.5 text-green-700">
-                              {entry.completed_task_description || <span className="text-gray-300">—</span>}
-                            </td>
-                            <td className="border border-gray-200 px-2 py-1.5 text-gray-500">
-                              {entry.comments || <span className="text-gray-300">—</span>}
-                            </td>
+                            <td className="border border-gray-200 px-3 py-2.5 text-right font-mono font-semibold text-sm text-slate-700">{entry.billable_hours ?? 0}</td>
                           </tr>
                         );
                       })}
-                      <tr className="bg-[#e8f0fe] font-semibold sticky bottom-0 border-t-2 border-[#217346]">
-                        <td className="border border-gray-300 px-2 py-2 text-center text-gray-500 text-[10px] uppercase" colSpan={4}>TOTAL — {entries.length} days</td>
-                        <td className="border border-gray-300 px-2 py-2 text-right font-mono text-slate-800 font-bold">{totalWorked}</td>
-                        <td className="border border-gray-300 px-2 py-2 text-right font-mono text-blue-700 font-bold">{totalBillable}</td>
-                        <td className="border border-gray-300 px-2 py-2 text-right font-mono text-violet-700 font-bold">{totalActual}</td>
-                        <td className="border border-gray-300 px-2 py-2 text-center text-green-700 font-bold">{completed}/{entries.length}</td>
-                        <td className="border border-gray-300 px-2 py-2 text-center text-orange-600 font-bold">{unplanned}</td>
-                        <td className="border border-gray-300 px-2 py-2" colSpan={2} />
+                      <tr className="bg-[#217346] text-white font-semibold sticky bottom-0">
+                        <td colSpan={5} className="border border-[#1a5c38] px-3 py-2.5 text-right text-xs uppercase tracking-wider">Total Billable Hours</td>
+                        <td className="border border-[#1a5c38] px-3 py-2.5 text-right font-mono font-bold text-sm">{totalBillable}</td>
                       </tr>
                     </tbody>
                   </table>
