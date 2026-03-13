@@ -1,5 +1,5 @@
 import { getErrorMessage } from "@/lib/api";
-import { useState, FormEvent } from "react";
+import { useState, useEffect, FormEvent } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { authService } from "@/lib/auth";
 import { useAuth } from "@/contexts/AuthContext";
@@ -17,6 +17,17 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [checking, setChecking] = useState(true);
+
+  // Redirect to login if an admin already exists (setup already done)
+  useEffect(() => {
+    authService.getSetupStatus()
+      .then(res => {
+        if (!res.data.needs_setup) navigate("/login", { replace: true });
+      })
+      .catch(() => {/* allow through on error */})
+      .finally(() => setChecking(false));
+  }, [navigate]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -40,6 +51,8 @@ export default function SignupPage() {
       setLoading(false);
     }
   }
+
+  if (checking) return null;
 
   return (
     <div className="min-h-screen flex">

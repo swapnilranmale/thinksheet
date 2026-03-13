@@ -305,6 +305,7 @@ export interface SyncResult {
   employees_synced: number;
   mappings_synced: number;
   errors: { resource_id: string; reason: string }[];
+  synced_employees?: { name: string; email: string; unique_id: string }[];
 }
 
 // ── Streamline Master Data API ──────────────────────────────────────────────

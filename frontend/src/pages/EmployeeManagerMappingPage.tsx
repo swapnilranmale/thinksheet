@@ -132,7 +132,7 @@ function CreateManagerDialog({
   useEffect(() => {
     if (open) {
       setTeamsLoading(true);
-      streamlineService.getEngineeringTeams()
+      streamlineService.getTeams()
         .then(setTeams)
         .catch(() => toast.error("Failed to load teams"))
         .finally(() => setTeamsLoading(false));
@@ -354,7 +354,7 @@ function ManagersTab() {
       setLoading(true);
       const [res, teamsData] = await Promise.all([
         authService.getManagers({ page: p, limit: PAGE_SIZE, search: search || undefined }),
-        streamlineService.getEngineeringTeams(),
+        streamlineService.getTeams(),
       ]);
       setManagers(res.data.data);
       setPagination(res.data.pagination ?? { total: res.data.data?.length ?? 0, page: 1, limit: PAGE_SIZE, pages: 1 });
@@ -817,7 +817,7 @@ function EmployeesTab() {
           search: search || undefined,
           teamId: teamId !== "all" ? teamId : undefined,
         }),
-        streamlineService.getEngineeringTeams(),
+        streamlineService.getTeams(),
       ]);
       setEmployees(empRes.data);
       setPagination(empRes.pagination ?? { total: empRes.data?.length ?? 0, page: 1, limit: PAGE_SIZE, pages: 1 });
@@ -993,6 +993,7 @@ function EmployeesTab() {
                     <th className="text-left px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Emp ID</th>
                     <th className="text-left px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Resource ID</th>
                     <th className="text-left px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Actual Resource</th>
+                    <th className="text-left px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Profile Resource</th>
                     <th className="text-left px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Email</th>
                     <th className="text-left px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Team</th>
                     <th className="text-right px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Actions</th>
@@ -1019,6 +1020,7 @@ function EmployeesTab() {
                         <span className="font-mono text-xs text-slate-500">{emp.resource_id || '—'}</span>
                       </td>
                       <td className="px-5 py-3.5 text-slate-600 text-sm whitespace-nowrap">{emp.actual_resource || '—'}</td>
+                      <td className="px-5 py-3.5 text-slate-500 text-sm whitespace-nowrap">{emp.profile_resource || '—'}</td>
                       <td className="px-5 py-3.5 text-slate-500 text-sm whitespace-nowrap">{emp.official_email}</td>
                       <td className="px-5 py-3.5">
                         {emp.team_name ? (
@@ -1163,6 +1165,9 @@ function EmployeesTab() {
                 <div className="mt-2 space-y-1 pl-12">
                   <span className="font-mono text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md">{emp.unique_id}</span>
                   <p className="text-xs text-slate-500 truncate mt-1">{emp.official_email}</p>
+                  {emp.profile_resource && (
+                    <p className="text-xs text-slate-400 truncate">Profile: <span className="text-slate-600">{emp.profile_resource}</span></p>
+                  )}
                   {emp.team_name && (
                     <span className="inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-md bg-[#217346]/8 text-[#217346] border border-[#217346]/20 mt-1">
                       {emp.team_name}
@@ -1216,6 +1221,25 @@ function EmployeesTab() {
                     <p className="text-sm text-slate-800 mt-0.5 truncate">{viewTarget.official_email}</p>
                   </div>
                 </div>
+                {(viewTarget.actual_resource || viewTarget.profile_resource) && (
+                  <div className="flex items-center gap-3 px-4 py-3 bg-slate-50/50">
+                    <User className="w-4 h-4 text-slate-400 shrink-0" />
+                    <div className="flex-1 min-w-0 grid grid-cols-2 gap-2">
+                      {viewTarget.actual_resource && (
+                        <div>
+                          <p className="text-xs text-slate-400 font-medium uppercase tracking-wide">Actual Resource</p>
+                          <p className="text-sm text-slate-800 mt-0.5 truncate">{viewTarget.actual_resource}</p>
+                        </div>
+                      )}
+                      {viewTarget.profile_resource && (
+                        <div>
+                          <p className="text-xs text-slate-400 font-medium uppercase tracking-wide">Profile Resource</p>
+                          <p className="text-sm text-slate-800 mt-0.5 truncate">{viewTarget.profile_resource}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <DialogFooter className="gap-2">
@@ -1375,6 +1399,30 @@ function EmployeesTab() {
                   <p className="text-xs font-medium text-[#217346] mt-1">Project mappings</p>
                 </div>
               </div>
+              {/* Synced employees list */}
+              {syncResult.synced_employees && syncResult.synced_employees.length > 0 && (
+                <div className="border border-slate-200 rounded-xl overflow-hidden">
+                  <div className="bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 border-b border-slate-200">
+                    Synced Employees
+                  </div>
+                  <ul className="divide-y divide-slate-100 max-h-40 overflow-y-auto">
+                    {syncResult.synced_employees.map((emp, i) => (
+                      <li key={i} className="px-3 py-2 flex items-center gap-2.5">
+                        <div className="w-6 h-6 rounded-full bg-[#217346]/10 flex items-center justify-center text-[10px] font-bold text-[#217346] shrink-0">
+                          {emp.name.charAt(0)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium text-slate-700 truncate">{emp.name}</p>
+                          <p className="text-[10px] text-slate-400 truncate">{emp.email}</p>
+                        </div>
+                        <span className="font-mono text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded shrink-0">
+                          {emp.unique_id}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {/* Errors */}
               {syncResult.errors.length > 0 && (
                 <div className="bg-red-50 border border-red-100 rounded-xl p-3">
@@ -2170,12 +2218,333 @@ function ProjectsTab() {
   return null;
 }
 
+// ── Admins Tab ────────────────────────────────────────────────────────────────
+
+interface AdminRecord {
+  _id: string;
+  full_name: string;
+  email: string;
+  designation?: string;
+  is_active?: boolean;
+}
+
+function CreateAdminDialog({
+  open,
+  onClose,
+  onCreated,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [designation, setDesignation] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  function reset() {
+    setFullName(""); setEmail(""); setPassword(""); setShowPassword(false);
+    setDesignation(""); setErrors({});
+  }
+
+  function clearError(field: string) {
+    setErrors(prev => { const next = { ...prev }; delete next[field]; return next; });
+  }
+
+  function validate() {
+    const errs: Record<string, string> = {};
+    if (!fullName.trim()) errs.fullName = "Full name is required";
+    else if (fullName.trim().length < 2) errs.fullName = "Name must be at least 2 characters";
+    if (!email.trim()) errs.email = "Email is required";
+    else if (!MGR_EMAIL_RE.test(email.trim())) errs.email = "Enter a valid email address";
+    if (!password) errs.password = "Password is required";
+    else if (password.length < 6) errs.password = "Password must be at least 6 characters";
+    return errs;
+  }
+
+  async function handleCreate() {
+    const errs = validate();
+    if (Object.keys(errs).length > 0) { setErrors(errs); return; }
+    setSaving(true);
+    try {
+      await authService.createAdmin(email.trim(), password, fullName.trim(), designation.trim());
+      toast.success(`Administrator account created for ${fullName.trim()}`);
+      reset();
+      onCreated();
+      onClose();
+    } catch (err) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      if (msg?.toLowerCase().includes("email") || msg?.toLowerCase().includes("exists")) {
+        setErrors({ email: "An account with this email already exists" });
+      } else {
+        toast.error(msg || "Failed to create administrator");
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) { reset(); onClose(); } }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader className="pb-2">
+          <div className="flex items-center gap-3 mb-1">
+            <div className="w-10 h-10 rounded-xl bg-[#217346]/10 flex items-center justify-center shrink-0">
+              <Shield className="w-5 h-5 text-[#217346]" />
+            </div>
+            <div>
+              <DialogTitle className="text-lg font-semibold text-slate-800">Create Administrator</DialogTitle>
+              <DialogDescription className="text-sm text-slate-500 mt-0.5">
+                Create a new administrator account with full system access.
+              </DialogDescription>
+            </div>
+          </div>
+        </DialogHeader>
+
+        <div className="space-y-4 py-1">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">
+                Full Name <span className="text-red-500">*</span>
+              </label>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                <input
+                  type="text"
+                  value={fullName}
+                  onChange={(e) => { setFullName(e.target.value); clearError("fullName"); }}
+                  placeholder="John Smith"
+                  className={`w-full h-10 rounded-lg border pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]/40 focus:border-[#217346] transition-colors ${errors.fullName ? "border-red-400 bg-red-50" : "border-slate-200 bg-slate-50 hover:border-slate-300"}`}
+                />
+              </div>
+              <FieldError msg={errors.fullName} />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">
+                Designation
+              </label>
+              <div className="relative">
+                <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                <input
+                  type="text"
+                  value={designation}
+                  onChange={(e) => setDesignation(e.target.value)}
+                  placeholder="System Admin"
+                  className="w-full h-10 rounded-lg border border-slate-200 bg-slate-50 hover:border-slate-300 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]/40 focus:border-[#217346] transition-colors"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">
+              Email <span className="text-red-500">*</span>
+            </label>
+            <div className="relative">
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => { setEmail(e.target.value); clearError("email"); }}
+                placeholder="admin@company.com"
+                className={`w-full h-10 rounded-lg border pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]/40 focus:border-[#217346] transition-colors ${errors.email ? "border-red-400 bg-red-50" : "border-slate-200 bg-slate-50 hover:border-slate-300"}`}
+              />
+            </div>
+            <FieldError msg={errors.email} />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">
+              Password <span className="text-red-500">*</span>
+            </label>
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              <input
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => { setPassword(e.target.value); clearError("password"); }}
+                placeholder="Min. 6 characters"
+                className={`w-full h-10 rounded-lg border pl-9 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]/40 focus:border-[#217346] transition-colors ${errors.password ? "border-red-400 bg-red-50" : "border-slate-200 bg-slate-50 hover:border-slate-300"}`}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(v => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                tabIndex={-1}
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            <FieldError msg={errors.password} />
+          </div>
+        </div>
+
+        <DialogFooter className="pt-2 gap-2">
+          <Button variant="outline" onClick={() => { reset(); onClose(); }} disabled={saving} className="flex-1 sm:flex-none">
+            Cancel
+          </Button>
+          <Button onClick={handleCreate} disabled={saving} className="flex-1 sm:flex-none bg-[#217346] hover:bg-[#185c37] text-white gap-2 shadow-sm">
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Shield className="w-4 h-4" />}
+            {saving ? "Creating..." : "Create Admin"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AdminsTab() {
+  const [admins, setAdmins] = useState<AdminRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState({ total: 0, pages: 1 });
+  const PAGE_SIZE = 20;
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const loadAdmins = useCallback(async (p = 1, search = "") => {
+    try {
+      setLoading(true);
+      const res = await authService.getAdmins({ page: p, limit: PAGE_SIZE, search: search || undefined });
+      setAdmins(res.data.data);
+      setPagination(res.data.pagination ?? { total: res.data.data?.length ?? 0, page: 1, limit: PAGE_SIZE, pages: 1 });
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to load administrators"));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadAdmins(1, "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function handleSearch(q: string) {
+    setSearchQuery(q);
+    setPage(1);
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => loadAdmins(1, q), 400);
+  }
+
+  function goToPage(p: number) {
+    setPage(p);
+    loadAdmins(p, searchQuery);
+  }
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Toolbar */}
+      <div className="flex items-center justify-between mb-5 gap-3 flex-wrap shrink-0">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div className="relative min-w-[220px] max-w-xs">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => handleSearch(e.target.value)}
+              placeholder="Search admins…"
+              className="w-full h-9 pl-9 pr-3 rounded-lg border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#217346]/50 focus:border-[#217346] transition-all hover:border-slate-400"
+            />
+          </div>
+          <div className="flex items-center gap-1.5 text-sm text-slate-500 whitespace-nowrap">
+            <Shield className="w-4 h-4 text-[#217346]" />
+            <span><strong className="text-slate-700">{pagination.total}</strong> admin{pagination.total !== 1 ? "s" : ""}</span>
+          </div>
+        </div>
+        <Button
+          onClick={() => setCreateOpen(true)}
+          className="bg-[#217346] hover:bg-[#185c37] text-white gap-2 shrink-0 shadow-sm"
+        >
+          <Plus className="w-4 h-4" />
+          Add Admin
+        </Button>
+      </div>
+
+      {/* Admin list */}
+      {loading ? (
+        <div className="flex items-center justify-center py-16 text-slate-400 gap-2">
+          <Loader2 className="w-5 h-5 animate-spin text-[#217346]" />
+          <span>Loading administrators...</span>
+        </div>
+      ) : admins.length === 0 ? (
+        <div className="border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center py-16 text-slate-400">
+          <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-3">
+            <Shield className="w-7 h-7 opacity-40" />
+          </div>
+          <p className="font-medium text-slate-600">{searchQuery ? "No admins match your search" : "No administrators found"}</p>
+          <p className="text-sm mt-1 text-slate-400">{searchQuery ? "Try a different search term" : "Click \"Add Admin\" to create an administrator account"}</p>
+        </div>
+      ) : (
+        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col flex-1 min-h-0">
+          <div className="overflow-y-auto flex-1 p-3 space-y-3">
+            {admins.map((admin) => {
+              const isActive = admin.is_active !== false;
+              return (
+                <div
+                  key={admin._id}
+                  className="flex items-center gap-4 px-4 py-3.5 rounded-xl border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition-colors"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-[#217346]/10 flex items-center justify-center shrink-0 text-[#217346] font-bold text-sm">
+                    {getInitials(admin.full_name)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="font-semibold text-slate-800 truncate">{admin.full_name}</p>
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[#217346]/10 text-[#217346] border border-[#217346]/20 shrink-0">
+                        <Shield className="w-3 h-3" /> Admin
+                      </span>
+                      {!isActive && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-600 border border-red-200 shrink-0">
+                          Inactive
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-slate-500 truncate mt-0.5">{admin.email}</p>
+                    {admin.designation && (
+                      <p className="text-xs text-slate-400 mt-0.5">{admin.designation}</p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Pagination */}
+          {pagination.total > PAGE_SIZE && (
+            <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 bg-white shrink-0">
+              <span className="text-xs text-slate-400">
+                <strong>{pagination.total}</strong> admin{pagination.total !== 1 ? "s" : ""} · Page <strong>{page}</strong> of <strong>{pagination.pages}</strong>
+              </span>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => goToPage(page - 1)} className="gap-1 h-8">
+                  <ChevronLeft className="w-4 h-4" />Previous
+                </Button>
+                <Button variant="outline" size="sm" disabled={page >= pagination.pages} onClick={() => goToPage(page + 1)} className="gap-1 h-8">
+                  Next<ChevronRight className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      <CreateAdminDialog open={createOpen} onClose={() => setCreateOpen(false)} onCreated={() => loadAdmins(page, searchQuery)} />
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
-type Tab = "managers" | "employees" | "logs" | "projects";
+type Tab = "admins" | "managers" | "employees" | "logs" | "projects";
 
 const TAB_CONFIG: { id: Tab; label: string; displayLabel?: string; icon: ReactNode }[] = [
-  { id: "managers", label: "Managers", icon: <Shield className="w-4 h-4" /> },
+  { id: "admins", label: "Admins", displayLabel: "Administrators", icon: <Shield className="w-4 h-4" /> },
+  { id: "managers", label: "Managers", icon: <Users className="w-4 h-4" /> },
   { id: "employees", label: "Employees", icon: <Users className="w-4 h-4" /> },
   { id: "projects", label: "Projects", displayLabel: "Clients & Projects", icon: <FolderOpen className="w-4 h-4" /> },
   { id: "logs", label: "Activity Logs", icon: <ScrollText className="w-4 h-4" /> },
@@ -2184,9 +2553,9 @@ const TAB_CONFIG: { id: Tab; label: string; displayLabel?: string; icon: ReactNo
 export default function EmployeeManagerMappingPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const validTabs: Tab[] = ["managers", "employees", "logs", "projects"];
+  const validTabs: Tab[] = ["admins", "managers", "employees", "logs", "projects"];
   const tabParam = searchParams.get("tab") as Tab | null;
-  const activeTab: Tab = tabParam && validTabs.includes(tabParam) ? tabParam : "managers";
+  const activeTab: Tab = tabParam && validTabs.includes(tabParam) ? tabParam : "admins";
 
   function switchTab(tab: Tab) {
     navigate(`/timesheet/mapping?tab=${tab}`, { replace: true });
@@ -2195,7 +2564,6 @@ export default function EmployeeManagerMappingPage() {
   // Get the current tab label for header
   const currentTabConfig = TAB_CONFIG.find(tab => tab.id === activeTab);
   const currentTabLabel = currentTabConfig?.displayLabel || currentTabConfig?.label || "Administration";
-  const sidebarLabel = currentTabConfig?.label || "Administration";
 
   return (
     <DashboardLayout>
@@ -2207,6 +2575,7 @@ export default function EmployeeManagerMappingPage() {
 
         {/* Content area - fills remaining height */}
         <div className="flex-1 min-h-0">
+          {activeTab === "admins" && <AdminsTab />}
           {activeTab === "managers" && <ManagersTab />}
           {activeTab === "employees" && <EmployeesTab />}
           {activeTab === "logs" && <LogsTab />}

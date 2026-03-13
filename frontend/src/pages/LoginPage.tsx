@@ -1,7 +1,8 @@
 import { getErrorMessage } from "@/lib/api";
-import { useState, FormEvent } from "react";
+import { useState, useEffect, FormEvent } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { authService } from "@/lib/auth";
 import { Loader2, Clock, Mail, Lock, ArrowRight, Shield, Users, BarChart3, Eye, EyeOff } from "lucide-react";
 
 export default function LoginPage() {
@@ -15,6 +16,13 @@ export default function LoginPage() {
   const [emailFocused, setEmailFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [needsSetup, setNeedsSetup] = useState(false);
+
+  useEffect(() => {
+    authService.getSetupStatus()
+      .then(res => setNeedsSetup(res.data.needs_setup))
+      .catch(() => setNeedsSetup(false));
+  }, []);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -201,16 +209,18 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {/* CTA with animation */}
-          <p className="text-center text-sm text-slate-500 mt-6 animate-slide-up" style={{ animationDelay: "0.3s" }}>
-            First time setup?{" "}
-            <Link
-              to="/signup"
-              className="text-[#217346] font-semibold hover:underline transition-all duration-200 relative after:absolute after:bottom-0 after:left-0 after:w-0 after:h-0.5 after:bg-[#217346] after:transition-all after:duration-300 hover:after:w-full"
-            >
-              Create admin account
-            </Link>
-          </p>
+          {/* CTA with animation — only shown on first-time setup */}
+          {needsSetup && (
+            <p className="text-center text-sm text-slate-500 mt-6 animate-slide-up" style={{ animationDelay: "0.3s" }}>
+              First time setup?{" "}
+              <Link
+                to="/signup"
+                className="text-[#217346] font-semibold hover:underline transition-all duration-200 relative after:absolute after:bottom-0 after:left-0 after:w-0 after:h-0.5 after:bg-[#217346] after:transition-all after:duration-300 hover:after:w-full"
+              >
+                Create admin account
+              </Link>
+            </p>
+          )}
         </div>
       </div>
     </div>

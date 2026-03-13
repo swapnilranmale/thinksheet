@@ -210,8 +210,15 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
               </p>
             )}
             <SidebarLink
-              to="/timesheet/mapping?tab=managers"
+              to="/timesheet/mapping?tab=admins"
               icon={Shield}
+              label="Admins"
+              onClick={() => handleNavClick("/timesheet/mapping?tab=admins")}
+              collapsed={collapsed}
+            />
+            <SidebarLink
+              to="/timesheet/mapping?tab=managers"
+              icon={Users}
               label="Managers"
               onClick={() => handleNavClick("/timesheet/mapping?tab=managers")}
               collapsed={collapsed}

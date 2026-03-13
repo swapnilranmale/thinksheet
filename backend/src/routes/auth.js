@@ -33,6 +33,17 @@ function makeToken(user) {
     );
 }
 
+// ── GET /api/auth/setup-status — check if initial setup is needed ─────────────
+// Public endpoint: returns { needs_setup: true } if no ADMINISTRATOR exists yet.
+router.get('/setup-status', async (req, res) => {
+    try {
+        const adminExists = await User.exists({ role: 'ADMINISTRATOR', tenant_id: TENANT_ID, is_deleted: { $ne: true } });
+        res.json({ needs_setup: !adminExists });
+    } catch (err) {
+        res.status(500).json({ error: 'Server error', message: err.message });
+    }
+});
+
 // ── POST /api/auth/signup — create first ADMINISTRATOR ────────────────────────
 router.post('/signup', async (req, res) => {
     try {
@@ -40,6 +51,12 @@ router.post('/signup', async (req, res) => {
 
         if (!email || !password || !full_name) {
             return res.status(400).json({ error: 'email, password and full_name are required' });
+        }
+
+        // Only allow signup if no ADMINISTRATOR exists yet
+        const adminExists = await User.exists({ role: 'ADMINISTRATOR', tenant_id: TENANT_ID, is_deleted: { $ne: true } });
+        if (adminExists) {
+            return res.status(403).json({ error: 'Setup already complete. Contact your administrator to create accounts.' });
         }
 
         const existing = await User.findOne({ email: email.toLowerCase(), tenant_id: TENANT_ID });
@@ -245,6 +262,107 @@ router.post('/create-manager', authenticate, checkActive, authorize(['ADMINISTRA
     }
 });
 
+// ── POST /api/auth/create-admin — ADMINISTRATOR creates another ADMINISTRATOR ──
+router.post('/create-admin', authenticate, checkActive, authorize(['ADMINISTRATOR']), async (req, res) => {
+    try {
+        const { email, password, full_name, designation } = req.body;
+
+        if (!email || !password || !full_name) {
+            return res.status(400).json({ error: 'email, password and full_name are required' });
+        }
+
+        const existing = await User.findOne({ email: email.toLowerCase(), tenant_id: TENANT_ID });
+        if (existing) {
+            return res.status(409).json({ error: 'An account with this email already exists' });
+        }
+
+        const user = await User.create({
+            email: email.toLowerCase(),
+            password,
+            full_name,
+            role: 'ADMINISTRATOR',
+            tenant_id: TENANT_ID,
+            designation: designation || '',
+            is_active: true,
+            must_change_password: false,
+            permissions: {
+                module_access: [
+                    { module_name: 'timesheet', functions: ['view', 'create', 'edit', 'delete'], submodules: [] },
+                    { module_name: 'employee-mapping', functions: ['view', 'create', 'edit', 'delete'], submodules: [] }
+                ],
+                can_approve_expenses: true,
+                can_create_users: true,
+                approval_limit: null
+            }
+        });
+
+        await logActivity({
+            tenantId: TENANT_ID,
+            action: 'ADMIN_CREATED',
+            performedBy: req.user,
+            targetType: 'ADMINISTRATOR',
+            targetName: full_name,
+            targetEmail: email.toLowerCase(),
+            details: `Created administrator account for ${full_name}`
+        });
+
+        res.status(201).json({
+            success: true,
+            user: {
+                _id: user._id,
+                email: user.email,
+                full_name: user.full_name,
+                role: user.role,
+                designation: user.designation
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ error: 'Server error', message: err.message });
+    }
+});
+
+// ── GET /api/auth/admins — list all administrators (for admin UI) ──────────────
+router.get('/admins', authenticate, checkActive, authorize(['ADMINISTRATOR']), async (req, res) => {
+    try {
+        const filter = {
+            role: 'ADMINISTRATOR',
+            tenant_id: TENANT_ID,
+            is_deleted: { $ne: true },
+        };
+
+        const page  = Math.max(1, parseInt(req.query.page)  || 1);
+        const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
+        const skip  = (page - 1) * limit;
+
+        if (req.query.search) {
+            const rx = new RegExp(req.query.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+            filter.$or = [
+                { full_name: rx },
+                { email: rx },
+                { designation: rx },
+            ];
+        }
+
+        const [admins, total] = await Promise.all([
+            User.find(filter)
+                .select('_id full_name email designation is_active')
+                .sort({ createdAt: 1 })
+                .skip(skip)
+                .limit(limit)
+                .lean(),
+            User.countDocuments(filter),
+        ]);
+
+        res.json({
+            success: true,
+            data: admins,
+            pagination: { total, page, limit, pages: Math.ceil(total / limit) },
+        });
+    } catch (err) {
+        res.status(500).json({ error: 'Server error', message: err.message });
+    }
+});
+
 // ── GET /api/auth/managers — list all managers (for admin UI) ─────────────────
 router.get('/managers', authenticate, checkActive, authorize(['ADMINISTRATOR']), async (req, res) => {
     try {
@@ -404,10 +522,10 @@ router.post('/reset-password', authenticate, checkActive, authorize(['ADMINISTRA
             return res.status(404).json({ error: 'User not found' });
         }
 
-        // ADMINISTRATOR can only reset MANAGER passwords
+        // ADMINISTRATOR can reset MANAGER and EMPLOYEE passwords
         if (req.user.role === 'ADMINISTRATOR') {
-            if (target.role !== 'MANAGER') {
-                return res.status(403).json({ error: 'Administrators can only reset manager passwords' });
+            if (!['MANAGER', 'EMPLOYEE'].includes(target.role)) {
+                return res.status(403).json({ error: 'Access denied: administrators can only reset manager and employee passwords' });
             }
         }
 

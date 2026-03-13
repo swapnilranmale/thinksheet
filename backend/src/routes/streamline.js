@@ -92,6 +92,7 @@ async function proxyGet(path, req, res) {
 async function fetchStreamlineEmployeeMasters(streamlineUrl, headers) {
     const byId = {};
     const byEmail = {};
+    const byEmpId = {}; // keyed by emp_id or unique_id (company employee code)
     // Streamline360 employee endpoint — try /api/employees first (primary), fallback to /api/employee_masters
     const ENDPOINTS = ['/api/employees', '/api/employee_masters'];
     for (const endpoint of ENDPOINTS) {
@@ -119,8 +120,14 @@ async function fetchStreamlineEmployeeMasters(streamlineUrl, headers) {
                 for (const se of recs) {
                     const id = String(se._id || '');
                     const email = (se.official_email || se.email || se.work_email || '').toLowerCase().trim();
+                    const empId = String(se.emp_id || '').trim();
+                    const uniqueId = String(se.unique_id || '').trim();
                     if (id) byId[id] = se;
                     if (email) byEmail[email] = se;
+                    // Also index by company employee code (emp_id / unique_id) so resource records
+                    // that store the code instead of MongoDB _id can still be resolved correctly.
+                    if (empId) byEmpId[empId] = se;
+                    if (uniqueId && uniqueId !== empId) byEmpId[uniqueId] = se;
                     fetched++;
                 }
                 const pg = data.pagination || {};
@@ -133,7 +140,7 @@ async function fetchStreamlineEmployeeMasters(streamlineUrl, headers) {
         }
         if (fetched > 0) break; // got data — no need to try fallback endpoint
     }
-    return { byId, byEmail };
+    return { byId, byEmail, byEmpId };
 }
 
 /**
@@ -147,12 +154,14 @@ async function fetchStreamlineEmployeeMasters(streamlineUrl, headers) {
  *
  * Returns { empName, empEmail, empCode, designation } or null if unresolvable.
  */
-function resolveResourceEmployee(r, slEmpById, slEmpByEmail, tsUserMap, tsEmpByEmail) {
+function resolveResourceEmployee(r, slEmpById, slEmpByEmail, slEmpByEmpId, tsUserMap, tsEmpByEmail) {
     // Streamline360 resource record field names:
     //   actual_resource_emp_ttpl_id — the ACTUAL worker (e.g. Nilesh Gorhe)  ← primary
     //   profile_ttpl_id             — the billing profile (e.g. Swapnil Ranmale) ← fallback
-    // These may be a plain ID string or a populated object { _id, name, email }.
-    const rawActual = r.actual_resource_emp_ttpl_id || r.actual_resource_emp_id || r.actual_emp_id || null;
+    // These may be a plain ID string, a MongoDB ObjectId, a company emp_id code,
+    // or a populated object { _id, name, email }.
+    const rawActual = r.actual_resource_emp_ttpl_id || r.actual_resource_emp_id || r.actual_emp_id
+        || r.employee_id || r.resource_employee_id || null;
     const rawProf   = r.profile_ttpl_id || r.profile_id || r.ttpl_id || r.employee_profile_id || null;
 
     const actualId = rawActual && typeof rawActual === 'object'
@@ -168,8 +177,10 @@ function resolveResourceEmployee(r, slEmpById, slEmpByEmail, tsUserMap, tsEmpByE
     const actualObjEmail = (rawActual && typeof rawActual === 'object')
         ? (rawActual.email || rawActual.official_email || '').toLowerCase().trim() : '';
 
-    let slEmp = (actualId && slEmpById[actualId])
-        || (profId && slEmpById[profId])
+    // Look up by MongoDB _id first (most precise), then fall back to company emp_id code.
+    // This handles resource records that store the employee's emp_id instead of their _id.
+    let slEmp = (actualId && (slEmpById[actualId] || slEmpByEmpId?.[actualId]))
+        || (profId && (slEmpById[profId] || slEmpByEmpId?.[profId]))
         || null;
 
     // Try direct fields on resource record.
@@ -369,7 +380,7 @@ router.get('/my-resource-projects', authenticate, checkActive, authorize(['MANAG
         //   3. ThinkSheet Employee by email        (used after resolving email from User)
 
         // 1. Fetch Streamline Employee Masters (resolves TTPL IDs → name/email)
-        const { byId: slEmpById, byEmail: slEmpByEmail } =
+        const { byId: slEmpById, byEmail: slEmpByEmail, byEmpId: slEmpByEmpId } =
             await fetchStreamlineEmployeeMasters(streamlineUrl, headers);
 
         // 2 & 3. Collect all candidate IDs → lookup ThinkSheet Users + Employees
@@ -450,7 +461,7 @@ router.get('/my-resource-projects', authenticate, checkActive, authorize(['MANAG
 
             // Resolve employee using all available lookup maps
             const { empName, empEmail, empCode, designation } =
-                resolveResourceEmployee(r, slEmpById, slEmpByEmail, tsUserMap, tsEmpByEmail);
+                resolveResourceEmployee(r, slEmpById, slEmpByEmail, slEmpByEmpId, tsUserMap, tsEmpByEmail);
 
             const teamName = (teamObj?.team_name || r.team || r.team_name || '').trim();
             // Streamline Resource ID (e.g. "UPID-26-18-1") — field is resource_id on the record
@@ -566,10 +577,32 @@ router.post('/sync', authenticate, checkActive, authorize(['ADMINISTRATOR']), as
         //   3. Direct fields on resource record    → last resort
 
         // Fetch Streamline Employee Masters (primary resolution source)
-        const { byId: slEmpById, byEmail: slEmpByEmail } =
+        const { byId: slEmpById, byEmail: slEmpByEmail, byEmpId: slEmpByEmpId } =
             await fetchStreamlineEmployeeMasters(streamlineUrl, headers);
 
         console.log(`[Sync] Streamline Employee Masters fetched: ${Object.keys(slEmpById).length}`);
+
+        // ── Step 2b: Pre-fetch Streamline teams for team name + manager resolution ─
+        // Resource records store team as "team" (plain name string, e.g. "JAVA") — no team_id field.
+        // Build byId AND byName maps so we can look up manager_ids by team name.
+        const streamlineTeamMap = {};     // keyed by team _id string
+        const streamlineTeamByName = {}; // keyed by lowercase team name
+        try {
+            const teamCtrl = new AbortController();
+            const teamTo = setTimeout(() => teamCtrl.abort(), 15000);
+            const teamResp = await fetch(`${streamlineUrl}/api/teams?page=1&limit=500`, { headers, signal: teamCtrl.signal });
+            clearTimeout(teamTo);
+            if (teamResp.ok) {
+                const teamData = await teamResp.json();
+                (teamData.teams || []).forEach(t => {
+                    streamlineTeamMap[String(t._id)] = t;
+                    if (t.team_name) streamlineTeamByName[t.team_name.toLowerCase().trim()] = t;
+                });
+                console.log(`[Sync] Streamline teams fetched: ${Object.keys(streamlineTeamMap).length}`);
+            }
+        } catch (e) {
+            console.warn('[Streamline sync] Could not pre-fetch teams:', e.message);
+        }
 
         // Collect candidate IDs for ThinkSheet User fallback lookup
         const syncCandidateIds = new Set();
@@ -602,14 +635,16 @@ router.post('/sync', authenticate, checkActive, authorize(['ADMINISTRATOR']), as
             total_resources: allResources.length,
             employees_synced: 0,
             mappings_synced: 0,
-            errors: []
+            errors: [],
+            synced_employees: [], // list of employees synced (name, email, unique_id)
         };
+        const resourceSyncedCodes = new Set(); // track emp codes synced via resource records
 
         for (const r of allResources) {
             try {
                 // Resolve employee using all available lookup maps
                 const { empName, empEmail, empCode, designation } =
-                    resolveResourceEmployee(r, slEmpById, slEmpByEmail, syncTsUserMap, syncTsEmpByEmail);
+                    resolveResourceEmployee(r, slEmpById, slEmpByEmail, slEmpByEmpId, syncTsUserMap, syncTsEmpByEmail);
 
                 if (!empEmail || !empName) {
                     results.errors.push({ resource_id: r._id, reason: 'Missing employee name or email' });
@@ -617,9 +652,16 @@ router.post('/sync', authenticate, checkActive, authorize(['ADMINISTRATOR']), as
                 }
 
                 // ── Extract team + department ──────────────────────────────────
+                // Resource Master stores team as "team" (plain name string, e.g. "JAVA").
+                // There is no team_id field on the resource record.
                 const teamObj = (r.team_id && typeof r.team_id === 'object') ? r.team_id : null;
                 const teamId = teamObj?._id?.toString() || (typeof r.team_id === 'string' ? r.team_id : '') || '';
-                const teamName = (teamObj?.team_name || r.team_name || '').trim();
+                // Team name: use the direct "team" field, fall back to populated object or team_name
+                const teamName = (r.team || teamObj?.team_name || r.team_name || '').trim();
+                // Look up the team object by name (since resource records have no team_id)
+                const resolvedTeam = teamObj
+                    || (teamId ? streamlineTeamMap[teamId] : null)
+                    || (teamName ? streamlineTeamByName[teamName.toLowerCase()] : null);
 
                 const deptObj = (r.department_id && typeof r.department_id === 'object') ? r.department_id : null;
                 const departmentId = deptObj?._id || (typeof r.department_id === 'string' ? r.department_id : null);
@@ -646,11 +688,14 @@ router.post('/sync', authenticate, checkActive, authorize(['ADMINISTRATOR']), as
                 const actualResource = (r.actual_resource || '').trim();
                 const resourceId = String(r.resource_id || '').trim();
 
+                // Use resolvedTeam._id for team_id if available (resource records have no team_id)
+                const resolvedTeamId = resolvedTeam?._id?.toString() || teamId || '';
+
                 const empUpdate = {
                     employee_name: empName,
                     official_email: empEmail,
                     designation,
-                    team_id: teamId,
+                    team_id: resolvedTeamId,
                     team_name: teamName,
                     profile_resource: profileResource,
                     actual_resource: actualResource,
@@ -672,6 +717,8 @@ router.post('/sync', authenticate, checkActive, authorize(['ADMINISTRATOR']), as
                     );
 
                     results.employees_synced++;
+                    resourceSyncedCodes.add(empCode);
+                    results.synced_employees.push({ name: empName, email: empEmail, unique_id: empCode });
                 } catch (upsertErr) {
                     // If upsert fails due to unique constraint, try fallback: check by email
                     // This handles edge cases where unique_id conflicts with existing data
@@ -709,6 +756,8 @@ router.post('/sync', authenticate, checkActive, authorize(['ADMINISTRATOR']), as
                                     );
                                 }
                                 results.employees_synced++;
+                                resourceSyncedCodes.add(empCode);
+                                results.synced_employees.push({ name: empName, email: empEmail, unique_id: empCode });
                             } else {
                                 // No employee by email and unique_id conflict - cannot proceed safely
                                 results.errors.push({
@@ -735,8 +784,10 @@ router.post('/sync', authenticate, checkActive, authorize(['ADMINISTRATOR']), as
                 if (!empDoc) continue;
 
                 // ── Ensure User credentials exist for this employee ────────────
+                // Engineering Managers → MANAGER role, everyone else → EMPLOYEE.
                 // Uses emp_id (empCode) as the default login password.
                 // If a User already exists for this email it is left unchanged.
+                const isEngineeringManager = /engineering manager/i.test(designation);
                 try {
                     const existingUser = await User.findOne({
                         email: empEmail.toLowerCase(),
@@ -744,16 +795,25 @@ router.post('/sync', authenticate, checkActive, authorize(['ADMINISTRATOR']), as
                         is_deleted: { $ne: true }
                     });
                     if (!existingUser) {
-                        await User.create({
+                        const newUser = await User.create({
                             email: empEmail.toLowerCase(),
                             password: empCode,  // emp_id is the default password
                             full_name: empName,
-                            role: 'EMPLOYEE',
+                            role: isEngineeringManager ? 'MANAGER' : 'EMPLOYEE',
                             tenant_id: tenantId,
+                            designation,
+                            team_ids: isEngineeringManager && resolvedTeamId ? [resolvedTeamId] : [],
                             is_active: true,
                             is_deleted: false,
                             must_change_password: true,
-                            permissions: {
+                            permissions: isEngineeringManager ? {
+                                module_access: [
+                                    { module_name: 'timesheet', functions: ['view'], submodules: [] }
+                                ],
+                                can_approve_expenses: false,
+                                can_create_users: false,
+                                approval_limit: null
+                            } : {
                                 module_access: [
                                     { module_name: 'timesheet', functions: ['view', 'create', 'edit'], submodules: [] }
                                 ],
@@ -762,6 +822,32 @@ router.post('/sync', authenticate, checkActive, authorize(['ADMINISTRATOR']), as
                                 approval_limit: null
                             }
                         });
+                        // Keep managerByEmail map up-to-date so subsequent resource records
+                        // in this same sync can immediately use the newly created manager.
+                        if (isEngineeringManager) {
+                            managerByEmail[empEmail.toLowerCase()] = newUser._id;
+                        }
+                    } else if (isEngineeringManager) {
+                        // Existing user: promote to MANAGER if not already, and ensure team_ids is correct
+                        let changed = false;
+                        if (existingUser.role !== 'MANAGER') {
+                            existingUser.role = 'MANAGER';
+                            existingUser.permissions = {
+                                module_access: [
+                                    { module_name: 'timesheet', functions: ['view'], submodules: [] }
+                                ],
+                                can_approve_expenses: false,
+                                can_create_users: false,
+                                approval_limit: null
+                            };
+                            changed = true;
+                        }
+                        if (resolvedTeamId && !existingUser.team_ids.includes(resolvedTeamId)) {
+                            existingUser.team_ids = [...new Set([...existingUser.team_ids, resolvedTeamId])];
+                            changed = true;
+                        }
+                        if (changed) await existingUser.save();
+                        managerByEmail[empEmail.toLowerCase()] = existingUser._id;
                     }
                 } catch (userErr) {
                     // Non-fatal: log but continue — employee record already saved
@@ -798,7 +884,7 @@ router.post('/sync', authenticate, checkActive, authorize(['ADMINISTRATOR']), as
 
                 // ── Try to match a ThinkSheet MANAGER from team's manager_ids ──
                 let managerId = null;
-                const teamManagerIds = teamObj?.manager_ids || [];
+                const teamManagerIds = resolvedTeam?.manager_ids || [];
                 for (const tm of teamManagerIds) {
                     const tmEmail = (tm.email || '').toLowerCase().trim();
                     if (tmEmail && managerByEmail[tmEmail]) {
@@ -846,6 +932,71 @@ router.post('/sync', authenticate, checkActive, authorize(['ADMINISTRATOR']), as
                     error_code: rowErr.code,
                     error_name: rowErr.name
                 });
+            }
+        }
+
+        // ── Step 5: Sync remaining employees from Streamline Employee Master ─────
+        // Employees who have no resource records (no project assignments) are not
+        // imported by the resource loop above. Sync them here so all employees in
+        // the Employee Master appear in ThinkSheet (without project mappings).
+        const allSlEmps = Object.values(slEmpById);
+        for (const slEmp of allSlEmps) {
+            const empCode2 = String(slEmp.emp_id || slEmp.unique_id || '').trim();
+            if (!empCode2 || resourceSyncedCodes.has(empCode2)) continue;
+
+            const empName2 = (slEmp.employee_name || slEmp.full_name || slEmp.name || '').trim();
+            const empEmail2 = (slEmp.official_email || slEmp.email || slEmp.work_email || '').toLowerCase().trim();
+            if (!empName2 || !empEmail2) continue;
+
+            const designation2 = (slEmp.designation || slEmp.job_title || '').trim();
+            const rawTeamId2 = typeof slEmp.team_id === 'object'
+                ? String(slEmp.team_id?._id || '')
+                : String(slEmp.team_id || '').trim();
+            const teamName2 = (rawTeamId2 && streamlineTeamMap[rawTeamId2]?.team_name) || '';
+
+            try {
+                await Employee.findOneAndUpdate(
+                    { unique_id: empCode2, tenant_id: tenantId },
+                    {
+                        $set: {
+                            employee_name: empName2,
+                            official_email: empEmail2,
+                            designation: designation2,
+                            team_id: rawTeamId2,
+                            team_name: teamName2,
+                            synced_from_streamline: true,
+                            is_active: true,
+                            is_deleted: false,
+                            tenant_id: tenantId,
+                        },
+                        $setOnInsert: { unique_id: empCode2 }
+                    },
+                    { upsert: true, new: true }
+                );
+
+                // No User credentials created here — only employees with project mappings
+                // (synced via resource records in Step 4) get login access.
+                results.employees_synced++;
+                results.synced_employees.push({ name: empName2, email: empEmail2, unique_id: empCode2 });
+                console.log(`[Streamline sync] Employee Master sync (no creds): ${empName2} (${empCode2})`);
+            } catch (e) {
+                if (e.code === 11000) {
+                    // Email unique constraint — employee exists with different empCode
+                    try {
+                        const existingByEmail2 = await Employee.findOne({ official_email: empEmail2, tenant_id: tenantId });
+                        if (existingByEmail2) {
+                            await Employee.findByIdAndUpdate(existingByEmail2._id, {
+                                $set: { employee_name: empName2, designation: designation2 }
+                            });
+                            results.employees_synced++;
+                            results.synced_employees.push({ name: empName2, email: empEmail2, unique_id: empCode2 });
+                        }
+                    } catch (e2) {
+                        console.warn(`[Streamline sync] Employee Master fallback error for ${empEmail2}:`, e2.message);
+                    }
+                } else {
+                    console.warn(`[Streamline sync] Employee Master sync error for ${empEmail2}:`, e.message);
+                }
             }
         }
 
