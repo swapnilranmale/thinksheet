@@ -24,10 +24,10 @@ import {
   ChevronRight,
   FolderOpen,
   Pencil,
-  AlertTriangle,
   Download,
   FileSpreadsheet,
   FileText,
+  File,
 } from "lucide-react";
 import { toast } from "sonner";
 import { timesheetService, Timesheet, TimesheetEntry, DayStatus } from "@/services/timesheet";
@@ -74,7 +74,10 @@ type CellEntry = {
 
 type CellsMap = Record<string, CellEntry>; // keyed by "YYYY-MM-DD"
 
-function defaultStatus(_d: Date): DayStatus {
+function defaultStatus(d: Date): DayStatus {
+  const day = d.getDay();
+  // Saturday (6) and Sunday (0) default to Holiday
+  if (day === 0 || day === 6) return "Holiday";
   return "Working";
 }
 
@@ -111,10 +114,23 @@ function buildCellsFromEntries(entries: TimesheetEntry[], days: Date[]): CellsMa
   for (const e of entries) {
     const key = e.date?.slice(0, 10);
     if (!key || !map[key]) continue;
+
+    const tasks = Array.isArray(e.tasks) ? e.tasks.filter(Boolean) : [];
+    const hasContent = tasks.length > 0 || (e.billable_hours ?? 0) > 0 || (e.worked_hours ?? 0) > 0;
+
+    // For weekends: if the saved entry is "Working" but has no actual content,
+    // apply the "Holiday" default (fixes legacy data saved before weekend auto-default)
+    const d = new Date(e.date);
+    const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+    let status = e.status || map[key].status;
+    if (isWeekend && status === "Working" && !hasContent) {
+      status = "Holiday";
+    }
+
     map[key] = {
       _id: e._id,
-      status: e.status || map[key].status,
-      tasks: Array.isArray(e.tasks) ? e.tasks.filter(Boolean).join("\n") : (e.tasks ?? ""),
+      status,
+      tasks: tasks.join("\n"),
       worked_hours: e.worked_hours ?? 0,
       billable_hours: e.billable_hours ?? 0,
       actual_hours: e.actual_hours ?? 0,
@@ -175,10 +191,20 @@ const BillableCell = memo(function BillableCell({
       max={24}
       step={0.5}
       value={local}
-      onChange={(e) => setLocal(e.target.value)}
+      onChange={(e) => {
+        const raw = e.target.value;
+        // Allow empty for typing, but clamp any parsed value to 0–24
+        if (raw === "" || raw === ".") { setLocal(raw); return; }
+        const v = parseFloat(raw);
+        if (isNaN(v)) return;
+        if (v > 24) { setLocal("24"); return; }
+        if (v < 0) { setLocal("0"); return; }
+        setLocal(raw);
+      }}
       onBlur={() => {
         const v = parseFloat(local);
-        const next = isNaN(v) ? 0 : v;
+        const next = isNaN(v) ? 0 : Math.min(Math.max(v, 0), 24);
+        setLocal(String(next));
         if (next !== value) onCommit(next);
       }}
       className="w-16 text-center font-mono font-semibold bg-transparent border-0 focus:bg-white focus:ring-1 focus:ring-blue-400 rounded-sm outline-none px-1 py-0.5 text-xs"
@@ -295,7 +321,6 @@ export default function EmployeeTimesheetPage() {
 
   // Submit confirmation
   const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false);
-  const [submitWarnings, setSubmitWarnings] = useState<string[]>([]);
 
   // Export dialog
   const [exportOpen, setExportOpen] = useState(false);
@@ -437,22 +462,30 @@ export default function EmployeeTimesheetPage() {
   }
 
   function handleSubmitClick() {
-    const warnings: string[] = [];
+    const errors: string[] = [];
+    let emptyTaskCount = 0;
+    let zeroBillableCount = 0;
+
     Object.entries(cells).forEach(([, c]) => {
-      if ((c.status === "Working" || c.status === "Extra Working") && !c.tasks.trim()) {
-        warnings.push("working");
+      if (c.status === "Working" || c.status === "Extra Working") {
+        if (!c.tasks.trim()) emptyTaskCount++;
+        if (!c.billable_hours || c.billable_hours <= 0) zeroBillableCount++;
       }
     });
-    const emptyWorkingDays = warnings.length;
-    if (emptyWorkingDays > 0) {
-      setSubmitWarnings([
-        `${emptyWorkingDays} working day${emptyWorkingDays > 1 ? "s have" : " has"} no task description filled in.`,
-      ]);
-      setSubmitConfirmOpen(true);
-    } else {
-      setSubmitConfirmOpen(true);
-      setSubmitWarnings([]);
+
+    if (emptyTaskCount > 0) {
+      errors.push(`${emptyTaskCount} working day${emptyTaskCount > 1 ? "s have" : " has"} no task description. Task description is required for all working days.`);
     }
+    if (zeroBillableCount > 0) {
+      errors.push(`${zeroBillableCount} working day${zeroBillableCount > 1 ? "s have" : " has"} zero billable hours. Billable hours must be greater than zero for working days.`);
+    }
+
+    if (errors.length > 0) {
+      toast.error(errors.join("\n"));
+      return;
+    }
+
+    setSubmitConfirmOpen(true);
   }
 
   async function handleSubmitConfirmed() {
@@ -907,30 +940,12 @@ export default function EmployeeTimesheetPage() {
       <AlertDialog open={submitConfirmOpen} onOpenChange={setSubmitConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              {submitWarnings.length > 0 && (
-                <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />
-              )}
-              Submit Timesheet
-            </AlertDialogTitle>
+            <AlertDialogTitle>Submit Timesheet</AlertDialogTitle>
             <AlertDialogDescription>
-              <div className="space-y-3">
-                {submitWarnings.length > 0 ? (
-                  <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 text-sm text-amber-800 space-y-1">
-                    {submitWarnings.map((w, i) => (
-                      <p key={i} className="flex items-start gap-1.5">
-                        <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-500" />
-                        {w}
-                      </p>
-                    ))}
-                    <p className="text-xs text-amber-600 mt-1">You can still submit, but consider filling in task descriptions first.</p>
-                  </div>
-                ) : null}
-                <p>
-                  Submit your timesheet for <strong>{MONTHS[selectedMonth]} {selectedYear}</strong>?
-                  Once submitted, your manager will be notified for review.
-                </p>
-              </div>
+              <p>
+                Submit your timesheet for <strong>{MONTHS[selectedMonth]} {selectedYear}</strong>?
+                Once submitted, your manager will be notified for review.
+              </p>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

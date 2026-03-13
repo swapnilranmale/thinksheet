@@ -247,6 +247,28 @@ router.put('/:id/submit', ...auth, authorize(['EMPLOYEE']), async (req, res) => 
             return res.status(400).json({ error: 'Cannot submit an empty timesheet' });
         }
 
+        // Validate working days have task description and billable hours > 0
+        const errors = [];
+        let emptyTaskCount = 0;
+        let zeroBillableCount = 0;
+        let overMaxHours = 0;
+
+        for (const entry of timesheet.entries) {
+            if (entry.status === 'Working' || entry.status === 'Extra Working') {
+                if (!entry.tasks || entry.tasks.filter(t => t.trim()).length === 0) emptyTaskCount++;
+                if (!entry.billable_hours || entry.billable_hours <= 0) zeroBillableCount++;
+            }
+            if (entry.billable_hours > 24) overMaxHours++;
+        }
+
+        if (emptyTaskCount > 0) errors.push(`${emptyTaskCount} working day(s) have no task description`);
+        if (zeroBillableCount > 0) errors.push(`${zeroBillableCount} working day(s) have zero billable hours`);
+        if (overMaxHours > 0) errors.push(`${overMaxHours} entry(ies) exceed 24 billable hours`);
+
+        if (errors.length > 0) {
+            return res.status(400).json({ error: errors.join('. ') });
+        }
+
         timesheet.status = 'submitted';
         timesheet.submitted_at = new Date();
         await timesheet.save();
@@ -349,15 +371,28 @@ router.get('/team', ...auth, authorize(['MANAGER', 'ADMINISTRATOR']), async (req
             year
         }).lean();
 
+        // Build lookup by userId+projectId for per-project matching, with fallback to userId-only
+        const userProjectToTimesheet = {};
         const userIdToTimesheet = {};
-        timesheets.forEach(ts => { userIdToTimesheet[ts.user_id.toString()] = ts; });
+        timesheets.forEach(ts => {
+            const uid = ts.user_id.toString();
+            const pid = ts.project_id ? ts.project_id.toString() : null;
+            if (pid) userProjectToTimesheet[`${uid}:${pid}`] = ts;
+            // Keep first (or latest submitted) as fallback for userId-only lookup
+            if (!userIdToTimesheet[uid] || ts.status === 'submitted') userIdToTimesheet[uid] = ts;
+        });
 
         // Build response
         const team = mappings.map(mapping => {
             const emp = mapping.employee_id;
             if (!emp) return null;
             const userId = emailToUserId[emp.official_email];
-            const timesheet = userId ? userIdToTimesheet[userId.toString()] : null;
+            const uid = userId ? userId.toString() : null;
+            const pid = mapping.project_id ? mapping.project_id.toString() : null;
+            // Try per-project match first, then fallback
+            const timesheet = uid
+                ? (pid ? userProjectToTimesheet[`${uid}:${pid}`] : null) || userIdToTimesheet[uid] || null
+                : null;
             return {
                 mapping_id: mapping._id,
                 employee_id: emp._id,
@@ -429,13 +464,21 @@ router.get('/project/:projectId', ...auth, authorize(['MANAGER', 'ADMINISTRATOR'
         const emailToUserId = {};
         employeeUsers.forEach(u => { emailToUserId[u.email] = u._id; });
 
+        const projectObjectId = mongoose.Types.ObjectId.isValid(projectId)
+            ? new mongoose.Types.ObjectId(projectId)
+            : null;
+
         const userIds = Object.values(emailToUserId);
-        const timesheets = await Timesheet.find({
+        const timesheetQuery = {
             tenant_id: tenantId,
             user_id: { $in: userIds },
             month,
             year
-        }).lean();
+        };
+        // Filter by project_id so we find the correct per-project timesheet
+        if (projectObjectId) timesheetQuery.project_id = projectObjectId;
+
+        const timesheets = await Timesheet.find(timesheetQuery).lean();
 
         const userIdToTimesheet = {};
         timesheets.forEach(ts => { userIdToTimesheet[ts.user_id.toString()] = ts; });
@@ -519,12 +562,19 @@ router.get('/employee/:employeeId', ...auth, authorize(['MANAGER', 'ADMINISTRATO
             });
         }
 
-        const timesheet = await Timesheet.findOne({
+        const tsQuery = {
             tenant_id: tenantId,
             user_id: empUser._id,
             month,
             year
-        }).lean();
+        };
+        // Support optional project_id filter so manager sees the correct per-project timesheet
+        const projectId = req.query.projectId || null;
+        if (projectId && mongoose.Types.ObjectId.isValid(projectId)) {
+            tsQuery.project_id = new mongoose.Types.ObjectId(projectId);
+        }
+
+        const timesheet = await Timesheet.findOne(tsQuery).lean();
 
         res.json({ success: true, employee, data: timesheet || null });
     } catch (err) {

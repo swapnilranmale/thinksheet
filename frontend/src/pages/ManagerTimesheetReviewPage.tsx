@@ -143,7 +143,7 @@ export default function ManagerTimesheetReviewPage() {
     setView("timesheet");
     try {
       const res = await managerTimesheetService.getEmployeeTimesheet(
-        member.employee_id, selectedMonth + 1, selectedYear
+        member.employee_id, selectedMonth + 1, selectedYear, selectedProject?.project_id
       );
       setViewingTimesheet(res.data);
     } catch (err) {

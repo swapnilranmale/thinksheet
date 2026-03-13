@@ -179,9 +179,10 @@ export const managerTimesheetService = {
   },
 
   /** View a specific employee's timesheet */
-  getEmployeeTimesheet: async (employeeId: string, month: number, year: number) => {
+  getEmployeeTimesheet: async (employeeId: string, month: number, year: number, projectId?: string) => {
+    const qs = projectId ? `&projectId=${projectId}` : '';
     const res = await api.get<{ success: boolean; data: Timesheet | null; employee: EmployeeMaster }>(
-      `/timesheet/employee/${employeeId}?month=${month}&year=${year}`
+      `/timesheet/employee/${employeeId}?month=${month}&year=${year}${qs}`
     );
     return res.data; // { data, employee }
   },
