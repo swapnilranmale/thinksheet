@@ -9,6 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@dicebear/collection": "^9.4.0",
+    "@dicebear/core": "^9.4.0",
     "@tanstack/react-query": "^5.83.0",
     "axios": "^1.7.9",
     "clsx": "^2.1.1",
@@ -17,6 +19,7 @@
     "jspdf-autotable": "^5.0.7",
     "lucide-react": "^0.469.0",
     "react": "^18.3.1",
+    "react-avatar-editor": "^14.0.0",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.28.0",
     "sonner": "^2.0.7",
@@ -26,6 +29,7 @@
   "devDependencies": {
     "@types/node": "^22.10.2",
     "@types/react": "^18.3.18",
+    "@types/react-avatar-editor": "^13.0.4",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",

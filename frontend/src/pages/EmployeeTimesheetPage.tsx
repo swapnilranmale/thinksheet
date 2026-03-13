@@ -541,7 +541,7 @@ export default function EmployeeTimesheetPage() {
 
   return (
     <DashboardLayout>
-      <div className="flex-1 flex flex-col min-h-0 animate-fade-in pb-20">
+      <div className={`flex-1 flex flex-col min-h-0 animate-fade-in${!isLocked && !loading ? " pb-14" : ""}`}>
 
         {/* ── Header ── */}
         <div className="flex items-center justify-between mb-4">
@@ -645,17 +645,17 @@ export default function EmployeeTimesheetPage() {
             <div className="overflow-auto flex-1">
               <table
                 className="w-full text-xs"
-                style={{ borderCollapse: "collapse", minWidth: 780 }}
+                style={{ borderCollapse: "separate", borderSpacing: 0, minWidth: 780 }}
               >
                 {/* Sticky header */}
                 <thead className="sticky top-0 z-20">
-                  <tr className="bg-[#217346] text-white">
-                    <th style={th} className="w-12 text-center">Sr No</th>
-                    <th style={th} className="w-28 text-center">Status</th>
-                    <th style={th} className="w-36 text-left">Date</th>
-                    <th style={th} className="w-24 text-left">Day</th>
-                    <th style={{ ...th, minWidth: 300 }} className="text-left">Task Description</th>
-                    <th style={th} className="w-24 text-center">Billable Hours</th>
+                  <tr className="text-white">
+                    <th style={th} className="w-12 text-center bg-[#217346]">Sr No</th>
+                    <th style={th} className="w-28 text-center bg-[#217346]">Status</th>
+                    <th style={th} className="w-36 text-left bg-[#217346]">Date</th>
+                    <th style={th} className="w-24 text-left bg-[#217346]">Day</th>
+                    <th style={{ ...th, minWidth: 300 }} className="text-left bg-[#217346]">Task Description</th>
+                    <th style={th} className="w-24 text-center bg-[#217346]">Billable Hours</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -818,14 +818,9 @@ export default function EmployeeTimesheetPage() {
           <Button
             size="sm"
             onClick={handleSubmitClick}
-            disabled={saving}
             className="gap-1.5 bg-[#217346] hover:bg-[#185c37] text-white"
           >
-            {saving ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Send className="w-4 h-4" />
-            )}
+            <Send className="w-4 h-4" />
             Submit Timesheet
           </Button>
         </div>
