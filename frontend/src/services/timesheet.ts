@@ -304,9 +304,11 @@ export interface ResourceMasterProject {
 export interface SyncResult {
   total_resources: number;
   employees_synced: number;
+  new_employees_count: number;
   mappings_synced: number;
   errors: { resource_id: string; reason: string }[];
   synced_employees?: { name: string; email: string; unique_id: string }[];
+  is_first_sync: boolean;
 }
 
 // ── Streamline Master Data API ──────────────────────────────────────────────

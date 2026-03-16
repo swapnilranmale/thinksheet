@@ -56,6 +56,10 @@ const employeeSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
+    is_engineering_manager: {
+        type: Boolean,
+        default: false
+    },
     is_active: {
         type: Boolean,
         default: true

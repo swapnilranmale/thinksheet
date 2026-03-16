@@ -512,6 +512,10 @@ router.get('/my-resource-projects', authenticate, checkActive, authorize(['MANAG
 //      - If no match found, manager_id is left null (admin can assign later)
 //
 // Returns: { employees_synced, mappings_synced, total_resources, errors[] }
+// Matches all common engineering manager designation variants:
+// "Engineering Manager", "Engineering Mgr", "Engg Manager", "Engg. Manager", etc.
+const ENGG_MANAGER_RE = /engg\.?\s*manager|engineering\s+(manager|mgr)/i;
+
 router.post('/sync', authenticate, checkActive, authorize(['ADMINISTRATOR']), async (req, res) => {
     try {
         const { url: streamlineUrl } = getStreamlineConfig();
@@ -553,7 +557,7 @@ router.post('/sync', authenticate, checkActive, authorize(['ADMINISTRATOR']), as
         if (allResources.length === 0) {
             return res.json({
                 success: true,
-                data: { total_resources: 0, employees_synced: 0, mappings_synced: 0, errors: [] }
+                data: { total_resources: 0, employees_synced: 0, new_employees_count: 0, mappings_synced: 0, errors: [], synced_employees: [], is_first_sync: false }
             });
         }
 
@@ -631,12 +635,18 @@ router.post('/sync', authenticate, checkActive, authorize(['ADMINISTRATOR']), as
         }
 
         // ── Step 4: Process each resource record ──────────────────────────────
+        // Detect first-time sync: if no employees exist for this tenant yet
+        const existingEmployeeCount = await Employee.countDocuments({ tenant_id: tenantId, is_deleted: { $ne: true } });
+        const isFirstSync = existingEmployeeCount === 0;
+
         const results = {
             total_resources: allResources.length,
             employees_synced: 0,
+            new_employees_count: 0,  // count of employees newly inserted (not updated)
             mappings_synced: 0,
             errors: [],
-            synced_employees: [], // list of employees synced (name, email, unique_id)
+            synced_employees: [], // list of newly added employees only
+            is_first_sync: isFirstSync,
         };
         const resourceSyncedCodes = new Set(); // track emp codes synced via resource records
 
@@ -701,6 +711,7 @@ router.post('/sync', authenticate, checkActive, authorize(['ADMINISTRATOR']), as
                     actual_resource: actualResource,
                     resource_id: resourceId,
                     synced_from_streamline: true,
+                    is_engineering_manager: ENGG_MANAGER_RE.test(designation),
                     is_active: true,
                     is_deleted: false,
                     tenant_id: tenantId,
@@ -710,15 +721,20 @@ router.post('/sync', authenticate, checkActive, authorize(['ADMINISTRATOR']), as
                 let empDoc = null;
                 try {
                     // Primary upsert: by unique_id + tenant_id (the Streamline employee ID)
-                    empDoc = await Employee.findOneAndUpdate(
+                    const empRaw = await Employee.findOneAndUpdate(
                         { unique_id: empCode, tenant_id: tenantId },
                         { $set: empUpdate, $setOnInsert: { unique_id: empCode } },
-                        { upsert: true, new: true }
+                        { upsert: true, new: true, includeResultMetadata: true }
                     );
+                    empDoc = empRaw.value;
+                    const isNewEmployee = !empRaw.lastErrorObject?.updatedExisting;
 
                     results.employees_synced++;
                     resourceSyncedCodes.add(empCode);
-                    results.synced_employees.push({ name: empName, email: empEmail, unique_id: empCode });
+                    if (isNewEmployee) {
+                        results.new_employees_count++;
+                        results.synced_employees.push({ name: empName, email: empEmail, unique_id: empCode });
+                    }
                 } catch (upsertErr) {
                     // If upsert fails due to unique constraint, try fallback: check by email
                     // This handles edge cases where unique_id conflicts with existing data
@@ -757,7 +773,7 @@ router.post('/sync', authenticate, checkActive, authorize(['ADMINISTRATOR']), as
                                 }
                                 results.employees_synced++;
                                 resourceSyncedCodes.add(empCode);
-                                results.synced_employees.push({ name: empName, email: empEmail, unique_id: empCode });
+                                // Not a new employee (found by email fallback) — do not add to synced_employees
                             } else {
                                 // No employee by email and unique_id conflict - cannot proceed safely
                                 results.errors.push({
@@ -787,7 +803,7 @@ router.post('/sync', authenticate, checkActive, authorize(['ADMINISTRATOR']), as
                 // Engineering Managers → MANAGER role, everyone else → EMPLOYEE.
                 // Uses emp_id (empCode) as the default login password.
                 // If a User already exists for this email it is left unchanged.
-                const isEngineeringManager = /engineering manager/i.test(designation);
+                const isEngineeringManager = ENGG_MANAGER_RE.test(designation);
                 try {
                     const existingUser = await User.findOne({
                         email: empEmail.toLowerCase(),
@@ -949,13 +965,14 @@ router.post('/sync', authenticate, checkActive, authorize(['ADMINISTRATOR']), as
             if (!empName2 || !empEmail2) continue;
 
             const designation2 = (slEmp.designation || slEmp.job_title || '').trim();
+            const isEngineeringManager2 = ENGG_MANAGER_RE.test(designation2);
             const rawTeamId2 = typeof slEmp.team_id === 'object'
                 ? String(slEmp.team_id?._id || '')
                 : String(slEmp.team_id || '').trim();
             const teamName2 = (rawTeamId2 && streamlineTeamMap[rawTeamId2]?.team_name) || '';
 
             try {
-                await Employee.findOneAndUpdate(
+                const empRaw2 = await Employee.findOneAndUpdate(
                     { unique_id: empCode2, tenant_id: tenantId },
                     {
                         $set: {
@@ -965,20 +982,76 @@ router.post('/sync', authenticate, checkActive, authorize(['ADMINISTRATOR']), as
                             team_id: rawTeamId2,
                             team_name: teamName2,
                             synced_from_streamline: true,
+                            is_engineering_manager: isEngineeringManager2,
                             is_active: true,
                             is_deleted: false,
                             tenant_id: tenantId,
                         },
                         $setOnInsert: { unique_id: empCode2 }
                     },
-                    { upsert: true, new: true }
+                    { upsert: true, new: true, includeResultMetadata: true }
                 );
+                const isNewEmp2 = !empRaw2.lastErrorObject?.updatedExisting;
 
-                // No User credentials created here — only employees with project mappings
-                // (synced via resource records in Step 4) get login access.
+                // Create MANAGER credentials for engineering managers; skip credentials for regular employees
+                // without resource records (they don't have project mappings and can't log timesheets).
+                if (isEngineeringManager2) {
+                    try {
+                        const existingUser2 = await User.findOne({
+                            email: empEmail2.toLowerCase(),
+                            tenant_id: tenantId,
+                            is_deleted: { $ne: true }
+                        });
+                        if (!existingUser2) {
+                            const newMgr = await User.create({
+                                email: empEmail2.toLowerCase(),
+                                password: empCode2,
+                                full_name: empName2,
+                                role: 'MANAGER',
+                                tenant_id: tenantId,
+                                designation: designation2,
+                                team_ids: rawTeamId2 ? [rawTeamId2] : [],
+                                is_active: true,
+                                is_deleted: false,
+                                must_change_password: true,
+                                permissions: {
+                                    module_access: [
+                                        { module_name: 'timesheet', functions: ['view'], submodules: [] }
+                                    ],
+                                    can_approve_expenses: false,
+                                    can_create_users: false,
+                                    approval_limit: null
+                                }
+                            });
+                            managerByEmail[empEmail2.toLowerCase()] = newMgr._id;
+                            console.log(`[Streamline sync] Manager credentials created (Employee Master): ${empName2} (${empCode2})`);
+                        } else if (existingUser2.role !== 'MANAGER') {
+                            existingUser2.role = 'MANAGER';
+                            existingUser2.permissions = {
+                                module_access: [
+                                    { module_name: 'timesheet', functions: ['view'], submodules: [] }
+                                ],
+                                can_approve_expenses: false,
+                                can_create_users: false,
+                                approval_limit: null
+                            };
+                            if (rawTeamId2 && !existingUser2.team_ids.includes(rawTeamId2)) {
+                                existingUser2.team_ids = [...new Set([...existingUser2.team_ids, rawTeamId2])];
+                            }
+                            await existingUser2.save();
+                            managerByEmail[empEmail2.toLowerCase()] = existingUser2._id;
+                        }
+                    } catch (userErr2) {
+                        console.warn(`[Streamline sync] Could not create Manager User for ${empEmail2}: ${userErr2.message}`);
+                    }
+                }
+
                 results.employees_synced++;
-                results.synced_employees.push({ name: empName2, email: empEmail2, unique_id: empCode2 });
-                console.log(`[Streamline sync] Employee Master sync (no creds): ${empName2} (${empCode2})`);
+                if (isNewEmp2) {
+                    results.new_employees_count++;
+                    results.synced_employees.push({ name: empName2, email: empEmail2, unique_id: empCode2 });
+                }
+                console.log(`[Streamline sync] Employee Master sync: ${empName2} (${empCode2}) isManager=${isEngineeringManager2}`);
             } catch (e) {
                 if (e.code === 11000) {
                     // Email unique constraint — employee exists with different empCode
@@ -989,7 +1062,7 @@ router.post('/sync', authenticate, checkActive, authorize(['ADMINISTRATOR']), as
                                 $set: { employee_name: empName2, designation: designation2 }
                             });
                             results.employees_synced++;
-                            results.synced_employees.push({ name: empName2, email: empEmail2, unique_id: empCode2 });
+                            // Not a new employee (found by email fallback) — do not add to synced_employees
                         }
                     } catch (e2) {
                         console.warn(`[Streamline sync] Employee Master fallback error for ${empEmail2}:`, e2.message);

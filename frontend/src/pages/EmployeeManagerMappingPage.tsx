@@ -830,7 +830,11 @@ function EmployeesTab() {
   }, []);
 
   useEffect(() => {
-    loadData(1, "", "all");
+    async function init() {
+      await loadData(1, "", "all");
+      await handleSync(true);
+    }
+    init();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -852,17 +856,25 @@ function EmployeesTab() {
     loadData(p, searchQuery, filterTeamId);
   }
 
-  async function handleSync() {
+  async function handleSync(auto = false) {
     setSyncing(true);
     try {
       const res = await streamlineService.syncResources();
-      setSyncResult(res.data);
-      setSyncResultOpen(true);
-      toast.success(`Sync complete — ${res.data.employees_synced} employees synced. Login password = Employee ID.`);
+      const result = res.data;
+      const shouldShowModal = result.is_first_sync || result.new_employees_count > 0;
+      if (shouldShowModal) {
+        setSyncResult(result);
+        setSyncResultOpen(true);
+        if (!auto) {
+          toast.success(`Sync complete — ${result.new_employees_count} new employee${result.new_employees_count !== 1 ? "s" : ""} synced. Login password = Employee ID.`);
+        }
+      } else if (!auto) {
+        toast.info("No new employees found in Streamline360.");
+      }
       setPage(1);
       await loadData(1, searchQuery, filterTeamId);
     } catch (err) {
-      toast.error(getErrorMessage(err, "Sync from Streamline failed"));
+      if (!auto) toast.error(getErrorMessage(err, "Sync from Streamline failed"));
     } finally {
       setSyncing(false);
     }
@@ -958,7 +970,7 @@ function EmployeesTab() {
         <div className="flex items-center gap-2 flex-wrap justify-end">
           <Button
             variant="outline"
-            onClick={handleSync}
+            onClick={() => handleSync(false)}
             disabled={syncing}
             className="gap-2 border-blue-200 text-blue-700 hover:bg-blue-50 whitespace-nowrap"
             title="Fetch all employees and project assignments from Streamline360 Resource Master"
@@ -970,16 +982,16 @@ function EmployeesTab() {
       </div>
 
       <div className="flex-1 min-h-0">
-      {loading ? (
+      {loading || (syncing && employees.length === 0) ? (
         <div className="flex flex-col items-center justify-center py-20 text-slate-400 gap-3">
           <Loader2 className="w-7 h-7 animate-spin text-[#217346]" />
-          <span className="text-sm">Loading employees...</span>
+          <span className="text-sm">{syncing && !loading ? "Syncing employees from Streamline360…" : "Loading employees..."}</span>
         </div>
       ) : employees.length === 0 ? (
         <div className="border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center py-16 text-slate-400">
           <Users className="w-10 h-10 mb-3 opacity-30" />
           <p className="font-medium text-slate-600">{searchQuery || filterTeamId !== "all" ? "No employees match your filters" : "No employees yet"}</p>
-          <p className="text-sm mt-1">{searchQuery || filterTeamId !== "all" ? "Try adjusting your search or team filter" : "Click \"Sync\" to import all employees from Streamline360 Resource Master"}</p>
+          <p className="text-sm mt-1">{searchQuery || filterTeamId !== "all" ? "Try adjusting your search or team filter" : "Click \"Sync\" to import employees from Streamline360"}</p>
         </div>
       ) : (
         <>
@@ -1381,7 +1393,10 @@ function EmployeesTab() {
               <div>
                 <DialogTitle className="text-lg font-semibold text-slate-800">Sync Complete</DialogTitle>
                 <DialogDescription className="text-sm text-slate-500 mt-0.5">
-                  Processed <strong className="text-slate-700">{syncResult?.total_resources ?? 0}</strong> records from Streamline360.
+                  {syncResult?.is_first_sync
+                    ? <>Imported <strong className="text-slate-700">{syncResult.employees_synced}</strong> employees from Streamline360.</>
+                    : <><strong className="text-slate-700">{syncResult?.new_employees_count ?? 0}</strong> new employee{(syncResult?.new_employees_count ?? 0) !== 1 ? "s" : ""} added from Streamline360.</>
+                  }
                 </DialogDescription>
               </div>
             </div>
@@ -1391,8 +1406,12 @@ function EmployeesTab() {
               {/* Stats grid */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-green-50 border border-green-100 rounded-xl p-4 text-center">
-                  <p className="text-3xl font-bold text-green-600">{syncResult.employees_synced}</p>
-                  <p className="text-xs font-medium text-green-700 mt-1">Employees synced</p>
+                  <p className="text-3xl font-bold text-green-600">
+                    {syncResult.is_first_sync ? syncResult.employees_synced : syncResult.new_employees_count}
+                  </p>
+                  <p className="text-xs font-medium text-green-700 mt-1">
+                    {syncResult.is_first_sync ? "Total employees synced" : "New employees added"}
+                  </p>
                 </div>
                 <div className="bg-[#217346]/5 border border-[#217346]/15 rounded-xl p-4 text-center">
                   <p className="text-3xl font-bold text-[#217346]">{syncResult.mappings_synced}</p>

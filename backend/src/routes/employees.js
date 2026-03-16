@@ -51,7 +51,7 @@ router.get('/',
                 is_deleted: { $ne: true },
                 synced_from_streamline: true,
                 // Engineering Managers are shown in the Managers tab, not here
-                designation: { $not: /engineering manager/i },
+                is_engineering_manager: { $ne: true },
             };
 
             // Manager: only their teams
