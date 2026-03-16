@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -45,6 +45,18 @@ function uniqueSheetName(base: string, used: Record<string, number>): string {
   return used[raw] > 1 ? `${raw} (${used[raw]})` : raw;
 }
 
+function saveWorkbook(wb: ExcelJS.Workbook, filename: string) {
+  wb.xlsx.writeBuffer().then((buffer) => {
+    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${filename}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+}
+
 /**
  * Export one or many projects to a multi-sheet XLSX.
  * Sheet 1 : Summary  — one row per resource with project, client, designation
@@ -57,7 +69,7 @@ export function exportAdminProjectsXLSX(
   toDate: Date,
   filename: string
 ) {
-  const wb = XLSX.utils.book_new();
+  const wb = new ExcelJS.Workbook();
 
   const fmt = (d: Date) =>
     d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
@@ -79,8 +91,7 @@ export function exportAdminProjectsXLSX(
     }
   }
 
-  // ── Sheet 1: Summary (one block per project, matching the screenshot layout) ─
-  // Group allResources by project
+  // ── Sheet 1: Summary (one block per project) ─
   const projectGroups: Record<string, {
     client_name: string;
     project_name: string;
@@ -100,10 +111,14 @@ export function exportAdminProjectsXLSX(
     projectGroups[key].resources.push(r);
   }
 
-  const summaryData: (string | number)[][] = [];
+  const summaryWs = wb.addWorksheet("Summary");
+  summaryWs.columns = [
+    { width: 22 }, { width: 28 }, { width: 20 },
+  ];
+
   let firstBlock = true;
   for (const pg of Object.values(projectGroups)) {
-    if (!firstBlock) summaryData.push([], []); // spacing between project blocks
+    if (!firstBlock) { summaryWs.addRow([]); summaryWs.addRow([]); }
     firstBlock = false;
 
     const totalHours = pg.resources.reduce((s, r) => {
@@ -113,47 +128,39 @@ export function exportAdminProjectsXLSX(
       return s + hrs;
     }, 0);
 
-    summaryData.push(
-      ["Client Company Name", pg.client_name],
-      ["Project Name", pg.project_name],
-      ["Project Id", pg.project_code || "—"],
-      [],
-      ["", "TOTAL HOURS", "", totalHours || ""],
-      [],
-      ["Resource ID", "Profile Name", "Total Billable Hours"],
-    );
+    summaryWs.addRow(["Client Company Name", pg.client_name]);
+    summaryWs.addRow(["Project Name", pg.project_name]);
+    summaryWs.addRow(["Project Id", pg.project_code || "—"]);
+    summaryWs.addRow([]);
+    summaryWs.addRow(["", "TOTAL HOURS", "", totalHours || ""]);
+    summaryWs.addRow([]);
+    summaryWs.addRow(["Resource ID", "Profile Name", "Total Billable Hours"]);
 
     for (const r of pg.resources) {
       const hrs = r.entries
         ? r.entries.reduce((s, e) => s + (e.billable_hours || 0), 0)
         : 0;
-      summaryData.push([r.resource_id || "—", r.name, hrs || ""]);
+      summaryWs.addRow([r.resource_id || "—", r.name, hrs || ""]);
     }
   }
 
-  const summaryWs = XLSX.utils.aoa_to_sheet(summaryData);
-  summaryWs["!cols"] = [
-    { wch: 22 }, { wch: 28 }, { wch: 20 },
-  ];
-  XLSX.utils.book_append_sheet(wb, summaryWs, "Summary");
-
-  // ── One sheet per resource (named by resource first name or full name) ─────
+  // ── One sheet per resource ─────
   const usedSheetNames: Record<string, number> = {};
   for (const r of allResources) {
     const sheetName = uniqueSheetName(r.name || "Resource", usedSheetNames);
+    const ws = wb.addWorksheet(sheetName);
 
-    const header: (string | number)[][] = [
-      [r.name],
-      [`Project: ${r.project_name}  |  Client: ${r.client_name}`],
-      [`Designation: ${r.designation}  |  Team: ${r.team_name}`],
-      [`Period: ${period}`],
-      [],
-    ];
-
-    let ws: ReturnType<typeof XLSX.utils.aoa_to_sheet>;
+    ws.addRow([r.name]);
+    ws.addRow([`Project: ${r.project_name}  |  Client: ${r.client_name}`]);
+    ws.addRow([`Designation: ${r.designation}  |  Team: ${r.team_name}`]);
+    ws.addRow([`Period: ${period}`]);
+    ws.addRow([]);
 
     if (r.entries && r.entries.length > 0) {
-      // Filter entries by date range
+      ws.columns = [
+        { width: 5 }, { width: 18 }, { width: 12 }, { width: 16 }, { width: 50 }, { width: 16 },
+      ];
+
       const from = fromDate.getTime();
       const to = toDate.getTime();
       const filtered = r.entries.filter(e => {
@@ -161,12 +168,10 @@ export function exportAdminProjectsXLSX(
         return t >= from && t <= to;
       });
 
-      const entryRows: (string | number)[][] = [
-        ["#", "Date", "Day", "Status", "Task Description", "Billable Hours"],
-      ];
+      ws.addRow(["#", "Date", "Day", "Status", "Task Description", "Billable Hours"]);
       filtered.forEach((e, idx) => {
         const d = new Date(e.date);
-        entryRows.push([
+        ws.addRow([
           idx + 1,
           fmtDateAdmin(e.date),
           DAY_NAMES_ADMIN[d.getDay()],
@@ -175,34 +180,22 @@ export function exportAdminProjectsXLSX(
           e.billable_hours,
         ]);
       });
-      // Total row
       const totalBillable = filtered.reduce((s, e) => s + (e.billable_hours || 0), 0);
-      entryRows.push(["", "", "", "", "Total Billable Hours", totalBillable]);
-
-      ws = XLSX.utils.aoa_to_sheet([...header, ...entryRows]);
-      ws["!cols"] = [
-        { wch: 5 }, { wch: 18 }, { wch: 12 }, { wch: 16 }, { wch: 50 }, { wch: 16 },
-      ];
+      ws.addRow(["", "", "", "", "Total Billable Hours", totalBillable]);
     } else {
-      // No timesheet data — just show resource info
-      const infoRows: (string | number)[][] = [
-        ["Field", "Value"],
-        ["Name", r.name],
-        ["Email", r.email],
-        ["Designation", r.designation],
-        ["Team", r.team_name],
-        ["Project", r.project_name],
-        ["Client", r.client_name],
-        ["Resource ID", r.resource_id || "—"],
-      ];
-      ws = XLSX.utils.aoa_to_sheet([...header, ...infoRows]);
-      ws["!cols"] = [{ wch: 18 }, { wch: 35 }];
+      ws.columns = [{ width: 18 }, { width: 35 }];
+      ws.addRow(["Field", "Value"]);
+      ws.addRow(["Name", r.name]);
+      ws.addRow(["Email", r.email]);
+      ws.addRow(["Designation", r.designation]);
+      ws.addRow(["Team", r.team_name]);
+      ws.addRow(["Project", r.project_name]);
+      ws.addRow(["Client", r.client_name]);
+      ws.addRow(["Resource ID", r.resource_id || "—"]);
     }
-
-    XLSX.utils.book_append_sheet(wb, ws, sheetName);
   }
 
-  XLSX.writeFile(wb, `${filename}.xlsx`);
+  saveWorkbook(wb, filename);
 }
 
 export interface ExportRow {
@@ -275,22 +268,24 @@ function rowsToArray(rows: ExportRow[]): (string | number)[][] {
 }
 
 export function exportToXLSX(rows: ExportRow[], filename: string) {
-  const data = [getHeaders(), ...rowsToArray(rows)];
-  const ws = XLSX.utils.aoa_to_sheet(data);
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Timesheet");
 
-  // Column widths
-  ws["!cols"] = [
-    { wch: 6 },   // Sr No
-    { wch: 18 },  // Date
-    { wch: 12 },  // Day
-    { wch: 14 },  // Status
-    { wch: 50 },  // Task Description
-    { wch: 14 },  // Billable Hours
+  ws.columns = [
+    { width: 6 },   // Sr No
+    { width: 18 },  // Date
+    { width: 12 },  // Day
+    { width: 14 },  // Status
+    { width: 50 },  // Task Description
+    { width: 14 },  // Billable Hours
   ];
 
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Timesheet");
-  XLSX.writeFile(wb, `${filename}.xlsx`);
+  ws.addRow(getHeaders());
+  for (const row of rowsToArray(rows)) {
+    ws.addRow(row);
+  }
+
+  saveWorkbook(wb, filename);
 }
 
 export function exportToCSV(rows: ExportRow[], filename: string) {
