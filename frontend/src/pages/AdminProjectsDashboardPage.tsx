@@ -20,9 +20,11 @@ import {
 import { toast } from "sonner";
 import {
   projectTimesheetService,
+  projectSubmissionService,
   managerTimesheetService,
   ProjectTeamMember,
   ProjectInfo,
+  ProjectSubmission,
   Timesheet,
 } from "@/services/timesheet";
 import { clsx } from "clsx";
@@ -57,11 +59,21 @@ const thTotal: React.CSSProperties = { padding: "8px 10px", fontWeight: 700 };
 
 // ── Status config ─────────────────────────────────────────────────────────────
 
-const STATUS_CONFIG = {
-  submitted: {
-    label: "Submitted",
+const STATUS_CONFIG: Record<string, { label: string; badge: string; icon: typeof CheckCircle2 }> = {
+  approved: {
+    label: "Approved",
     badge: "bg-emerald-50 text-emerald-700 border-emerald-200",
     icon: CheckCircle2,
+  },
+  submitted: {
+    label: "Submitted",
+    badge: "bg-blue-50 text-blue-700 border-blue-200",
+    icon: CheckCircle2,
+  },
+  rejected: {
+    label: "Rejected",
+    badge: "bg-red-50 text-red-700 border-red-200",
+    icon: CircleDashed,
   },
   draft: {
     label: "In Progress",
@@ -465,6 +477,7 @@ interface ProjectData {
   team: ProjectTeamMember[];
   loading: boolean;
   error: string | null;
+  submission: ProjectSubmission | null;
 }
 
 // ── Project Section ───────────────────────────────────────────────────────────
@@ -530,6 +543,20 @@ function ProjectSection({ pd, month, year, onViewEmployee }: ProjectSectionProps
           )}
         </div>
       </div>
+
+      {/* Project submission banner */}
+      {pd.submission && (
+        <div className="flex items-center gap-3 px-5 py-2.5 bg-emerald-50 border-b border-emerald-100">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <p className="text-xs text-emerald-700 font-medium">
+            Submitted by{" "}
+            <strong>{typeof pd.submission.submitted_by === "object" ? pd.submission.submitted_by.full_name : "Manager"}</strong>
+            {" on "}
+            {new Date(pd.submission.submitted_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+            {" · "}{pd.submission.total_employees} employees · {pd.submission.total_billable_hours}h billable
+          </p>
+        </div>
+      )}
 
       {/* Progress bar */}
       {!pd.loading && total > 0 && (
@@ -643,6 +670,7 @@ export default function AdminProjectsDashboardPage() {
       team: [],
       loading: true,
       error: null,
+      submission: null,
     }))
   );
 
@@ -667,10 +695,12 @@ export default function AdminProjectsDashboardPage() {
       team: [],
       loading: true,
       error: null,
+      submission: null,
     })));
     setSelectedMember(null);
 
     projectIds.forEach(id => {
+      // Load team data
       projectTimesheetService.getProjectTeam(id, month, year)
         .then(res => {
           setProjects(prev => prev.map(p =>
@@ -687,6 +717,15 @@ export default function AdminProjectsDashboardPage() {
           ));
           toast.error("Failed to load project");
         });
+
+      // Load submission status
+      projectSubmissionService.getStatus(id, month, year)
+        .then(res => {
+          setProjects(prev => prev.map(p =>
+            p.projectId === id ? { ...p, submission: res.data } : p
+          ));
+        })
+        .catch(() => { /* ignore */ });
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [month, year, projectIdsParam]);

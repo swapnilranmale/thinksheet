@@ -24,9 +24,12 @@ export interface Timesheet {
   user_id: string;
   month: number;
   year: number;
-  status: 'draft' | 'submitted';
+  status: 'draft' | 'submitted' | 'approved' | 'rejected';
   entries: TimesheetEntry[];
   submitted_at: string | null;
+  approved_by: string | null;
+  approved_at: string | null;
+  rejection_reason: string | null;
   tenant_id: string;
   createdAt: string;
   updatedAt: string;
@@ -50,7 +53,7 @@ export interface TeamMember {
   department_id: string | null;
   manager_id: string | object;
   timesheet_id: string | null;
-  status: 'draft' | 'submitted' | 'not_started';
+  status: 'draft' | 'submitted' | 'approved' | 'rejected' | 'not_started';
   submitted_at: string | null;
   entries_count: number;
   total_worked: number;
@@ -185,6 +188,22 @@ export const managerTimesheetService = {
       `/timesheet/employee/${employeeId}?month=${month}&year=${year}${qs}`
     );
     return res.data; // { data, employee }
+  },
+
+  /** Approve a submitted timesheet */
+  approve: async (timesheetId: string) => {
+    const res = await api.put<{ success: boolean; data: Timesheet; message: string }>(
+      `/timesheet/${timesheetId}/approve`, {}
+    );
+    return res.data;
+  },
+
+  /** Reject a submitted timesheet with reason */
+  reject: async (timesheetId: string, reason: string) => {
+    const res = await api.put<{ success: boolean; data: Timesheet; message: string }>(
+      `/timesheet/${timesheetId}/reject`, { reason }
+    );
+    return res.data;
   },
 };
 
@@ -403,7 +422,7 @@ export interface ProjectTeamMember {
   unique_id: string;
   designation: string;
   timesheet_id: string | null;
-  status: 'submitted' | 'draft' | 'not_started';
+  status: 'submitted' | 'draft' | 'approved' | 'rejected' | 'not_started';
   submitted_at: string | null;
   entries_count: number;
   total_worked: number;
@@ -441,6 +460,105 @@ export interface ActivityLog {
   metadata: Record<string, unknown>;
   createdAt: string;
 }
+
+// ── Notification Types & API ─────────────────────────────────────────────────
+
+// ── Project Submission Types & API ───────────────────────────────────────────
+
+export interface ProjectSubmission {
+  _id: string;
+  project_id: string;
+  project_name: string;
+  project_code: string;
+  client_id: string | null;
+  client_name: string;
+  month: number;
+  year: number;
+  status: 'submitted' | 'acknowledged';
+  submitted_by: { _id: string; full_name: string; email: string } | string;
+  submitted_at: string;
+  acknowledged_by: string | null;
+  acknowledged_at: string | null;
+  total_employees: number;
+  total_billable_hours: number;
+}
+
+export const projectSubmissionService = {
+  submit: async (projectId: string, month: number, year: number, meta: { project_name?: string; project_code?: string; client_id?: string; client_name?: string }) => {
+    const res = await api.post<{ success: boolean; data: ProjectSubmission }>(
+      `/timesheet/project/${projectId}/submit-project`,
+      { month, year, ...meta }
+    );
+    return res.data;
+  },
+
+  getStatus: async (projectId: string, month: number, year: number) => {
+    const res = await api.get<{ success: boolean; data: ProjectSubmission | null }>(
+      `/timesheet/project/${projectId}/submission?month=${month}&year=${year}`
+    );
+    return res.data;
+  },
+
+  getAll: async (month?: number, year?: number) => {
+    const qs = new URLSearchParams();
+    if (month) qs.set('month', String(month));
+    if (year) qs.set('year', String(year));
+    const q = qs.toString();
+    const res = await api.get<{ success: boolean; data: ProjectSubmission[] }>(
+      `/timesheet/project-submissions${q ? `?${q}` : ''}`
+    );
+    return res.data;
+  },
+};
+
+// ── Notification Types & API ─────────────────────────────────────────────────
+
+export interface AppNotification {
+  _id: string;
+  type: 'timesheet_submitted' | 'timesheet_approved' | 'timesheet_rejected' | 'project_submitted';
+  title: string;
+  message: string;
+  timesheet_id: string | null;
+  metadata: {
+    employee_id: string | null;
+    employee_name: string | null;
+    project_id: string | null;
+    project_name: string | null;
+    month: number | null;
+    year: number | null;
+  };
+  is_read: boolean;
+  read_at: string | null;
+  createdAt: string;
+}
+
+export const notificationService = {
+  getAll: async (page = 1, limit = 20) => {
+    const res = await api.get<{
+      success: boolean;
+      data: AppNotification[];
+      pagination: { page: number; limit: number; total: number; pages: number };
+    }>(`/notifications?page=${page}&limit=${limit}`);
+    return res.data;
+  },
+
+  getUnreadCount: async () => {
+    const res = await api.get<{ success: boolean; unread: number }>('/notifications/count');
+    return res.data;
+  },
+
+  markRead: async (id: string) => {
+    const res = await api.put<{ success: boolean; data: AppNotification }>(`/notifications/${id}/read`, {});
+    return res.data;
+  },
+
+  markAllRead: async () => {
+    const res = await api.put<{ success: boolean; message: string }>('/notifications/read-all', {});
+    return res.data;
+  },
+};
+
+// ── Activity Log Types & API ─────────────────────────────────────────────────
 
 export const activityLogService = {
   getAll: async (page = 1, limit = 50) => {

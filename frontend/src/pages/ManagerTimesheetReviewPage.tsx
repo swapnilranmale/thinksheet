@@ -5,6 +5,16 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -23,14 +33,21 @@ import {
   FolderOpen,
   Building2,
   CircleDashed,
+  ThumbsUp,
+  ThumbsDown,
+  XCircle,
+  AlertCircle,
+  Send,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
   managerTimesheetService,
   projectTimesheetService,
+  projectSubmissionService,
   streamlineService,
   ResourceMasterProject,
   ProjectTeamMember,
+  ProjectSubmission,
   Timesheet,
 } from "@/services/timesheet";
 
@@ -47,9 +64,13 @@ const CURRENT_MONTH = NOW.getMonth();
 
 // ── Status badge ──────────────────────────────────────────────────────────────
 
-function StatusBadge({ status }: { status: "submitted" | "draft" | "not_started" }) {
+function StatusBadge({ status }: { status: string }) {
+  if (status === "approved")
+    return <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 gap-1 text-xs"><ThumbsUp className="w-3 h-3" />Approved</Badge>;
+  if (status === "rejected")
+    return <Badge className="bg-red-100 text-red-700 border-red-200 gap-1 text-xs"><XCircle className="w-3 h-3" />Rejected</Badge>;
   if (status === "submitted")
-    return <Badge className="bg-green-100 text-green-700 border-green-200 gap-1 text-xs"><CheckCircle2 className="w-3 h-3" />Submitted</Badge>;
+    return <Badge className="bg-blue-100 text-blue-700 border-blue-200 gap-1 text-xs"><CheckCircle2 className="w-3 h-3" />Submitted</Badge>;
   if (status === "draft")
     return <Badge variant="outline" className="gap-1 text-xs text-orange-600 border-orange-200"><Clock className="w-3 h-3" />In Progress</Badge>;
   return <Badge variant="secondary" className="text-xs text-slate-500 gap-1"><CircleDashed className="w-3 h-3" />Not Started</Badge>;
@@ -87,6 +108,17 @@ export default function ManagerTimesheetReviewPage() {
   const [viewingMember, setViewingMember] = useState<ProjectTeamMember | null>(null);
   const [viewingTimesheet, setViewingTimesheet] = useState<Timesheet | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+
+  // Approve / Reject state
+  const [approving, setApproving] = useState(false);
+  const [approveConfirmOpen, setApproveConfirmOpen] = useState(false);
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+
+  // Project submission state
+  const [projectSubmission, setProjectSubmission] = useState<ProjectSubmission | null>(null);
+  const [submitProjectOpen, setSubmitProjectOpen] = useState(false);
+  const [submittingProject, setSubmittingProject] = useState(false);
 
   // ── Load clients ─────────────────────────────────────────────────────────
 
@@ -135,6 +167,24 @@ export default function ManagerTimesheetReviewPage() {
     return () => { cancelled = true; };
   }, [selectedProject, selectedMonth, selectedYear]);
 
+  // ── Load project submission status ──────────────────────────────────────
+
+  useEffect(() => {
+    if (!selectedProject) { setProjectSubmission(null); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await projectSubmissionService.getStatus(
+          selectedProject.project_id, selectedMonth + 1, selectedYear
+        );
+        if (!cancelled) setProjectSubmission(res.data);
+      } catch {
+        if (!cancelled) setProjectSubmission(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedProject, selectedMonth, selectedYear, projectMembers]);
+
   // Memoised timesheet computations — must be called before any early returns
   const timesheetStats = useMemo(() => {
     const entries = [...(viewingTimesheet?.entries ?? [])].sort((a, b) => a.date.localeCompare(b.date));
@@ -164,6 +214,79 @@ export default function ManagerTimesheetReviewPage() {
       setView("resources");
     } finally {
       setDetailLoading(false);
+    }
+  }
+
+  // ── Approve / Reject handlers ──────────────────────────────────────────
+
+  async function handleApprove() {
+    if (!viewingTimesheet) return;
+    setApproveConfirmOpen(false);
+    setApproving(true);
+    try {
+      const res = await managerTimesheetService.approve(viewingTimesheet._id);
+      setViewingTimesheet(res.data);
+      // Also update the member status in the resources list
+      if (viewingMember) {
+        setViewingMember({ ...viewingMember, status: "approved" });
+        setProjectMembers(prev => prev.map(m =>
+          m.employee_id === viewingMember.employee_id ? { ...m, status: "approved" as const } : m
+        ));
+      }
+      toast.success("Timesheet approved successfully");
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to approve timesheet"));
+    } finally {
+      setApproving(false);
+    }
+  }
+
+  async function handleReject() {
+    if (!viewingTimesheet || !rejectReason.trim()) return;
+    setRejectDialogOpen(false);
+    setApproving(true);
+    try {
+      const res = await managerTimesheetService.reject(viewingTimesheet._id, rejectReason.trim());
+      setViewingTimesheet(res.data);
+      if (viewingMember) {
+        setViewingMember({ ...viewingMember, status: "rejected" });
+        setProjectMembers(prev => prev.map(m =>
+          m.employee_id === viewingMember.employee_id ? { ...m, status: "rejected" as const } : m
+        ));
+      }
+      toast.success("Timesheet rejected");
+      setRejectReason("");
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to reject timesheet"));
+    } finally {
+      setApproving(false);
+    }
+  }
+
+  // ── Submit Project handler ──────────────────────────────────────────────
+
+  async function handleSubmitProject() {
+    if (!selectedProject) return;
+    setSubmitProjectOpen(false);
+    setSubmittingProject(true);
+    try {
+      const res = await projectSubmissionService.submit(
+        selectedProject.project_id,
+        selectedMonth + 1,
+        selectedYear,
+        {
+          project_name: selectedProject.project_name,
+          project_code: selectedProject.project_code,
+          client_id: selectedProject.client_id,
+          client_name: selectedProject.client_name,
+        }
+      );
+      setProjectSubmission(res.data);
+      toast.success("Project submitted to admin successfully");
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to submit project"));
+    } finally {
+      setSubmittingProject(false);
     }
   }
 
@@ -359,7 +482,9 @@ export default function ManagerTimesheetReviewPage() {
   // ════════════════════════════════════════════════════════════════════════════
 
   if (view === "resources" && selectedProject) {
+    const approvedCount   = projectMembers.filter((m) => m.status === "approved").length;
     const submittedCount  = projectMembers.filter((m) => m.status === "submitted").length;
+    const rejectedCount   = projectMembers.filter((m) => m.status === "rejected").length;
     const draftCount      = projectMembers.filter((m) => m.status === "draft").length;
     const notStartedCount = projectMembers.filter((m) => m.status === "not_started").length;
 
@@ -374,15 +499,53 @@ export default function ManagerTimesheetReviewPage() {
                 <Building2 className="w-3.5 h-3.5" />{selectedProject.client_name}
               </p>
             </div>
-            <MonthYearPicker />
+            <div className="flex items-center gap-2">
+              <MonthYearPicker />
+              {/* Submit Project button */}
+              {projectSubmission ? (
+                <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 gap-1.5 text-xs px-3 py-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  Project Submitted
+                </Badge>
+              ) : (
+                <Button
+                  size="sm"
+                  className="gap-1.5 bg-[#217346] hover:bg-[#185c37] text-white"
+                  disabled={submittingProject || approvedCount !== projectMembers.length || projectMembers.length === 0}
+                  onClick={() => setSubmitProjectOpen(true)}
+                  title={approvedCount !== projectMembers.length ? "All timesheets must be approved before submitting" : "Submit project to admin"}
+                >
+                  {submittingProject ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                  Submit Project
+                </Button>
+              )}
+            </div>
           </div>
 
+          {/* Project submitted banner */}
+          {projectSubmission && (
+            <div className="flex items-center gap-3 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-lg mb-4">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-emerald-800">
+                  Project submitted to admin
+                </p>
+                <p className="text-xs text-emerald-600">
+                  Submitted on {new Date(projectSubmission.submitted_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                  {" · "}{projectSubmission.total_employees} employees · {projectSubmission.total_billable_hours}h billable
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Stats */}
-          <div className="grid grid-cols-3 gap-3 mb-5">
+          <div className="grid grid-cols-5 gap-3 mb-5">
             {[
-              { label: "Submitted",   count: submittedCount,  icon: CheckCircle2, iconCls: "text-green-500",  bg: "bg-green-50",  text: "text-green-700" },
-              { label: "In Progress", count: draftCount,      icon: Clock,        iconCls: "text-orange-500", bg: "bg-orange-50", text: "text-orange-700" },
-              { label: "Not Started", count: notStartedCount, icon: CircleDashed, iconCls: "text-slate-400",  bg: "bg-slate-50",  text: "text-slate-600" },
+              { label: "Approved",    count: approvedCount,   icon: ThumbsUp,     iconCls: "text-emerald-500", bg: "bg-emerald-50", text: "text-emerald-700" },
+              { label: "Submitted",   count: submittedCount,  icon: CheckCircle2, iconCls: "text-blue-500",    bg: "bg-blue-50",    text: "text-blue-700" },
+              { label: "Rejected",    count: rejectedCount,   icon: XCircle,      iconCls: "text-red-500",     bg: "bg-red-50",     text: "text-red-700" },
+              { label: "In Progress", count: draftCount,      icon: Clock,        iconCls: "text-orange-500",  bg: "bg-orange-50",  text: "text-orange-700" },
+              { label: "Not Started", count: notStartedCount, icon: CircleDashed, iconCls: "text-slate-400",   bg: "bg-slate-50",   text: "text-slate-600" },
             ].map(({ label, count, icon: Icon, iconCls, bg, text }) => (
               <div key={label} className={`flex items-center gap-3 p-4 rounded-xl border ${bg}`}>
                 <div className="w-9 h-9 rounded-full bg-white flex items-center justify-center shrink-0 shadow-sm">
@@ -467,6 +630,37 @@ export default function ManagerTimesheetReviewPage() {
             </div>
           )}
         </div>
+
+        {/* ── Submit Project confirmation dialog ── */}
+        <AlertDialog open={submitProjectOpen} onOpenChange={setSubmitProjectOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <Send className="w-5 h-5 text-[#217346]" />
+                Submit Project to Admin
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                Submit <strong>{selectedProject.project_name}</strong> for{" "}
+                <strong>{MONTHS[selectedMonth]} {selectedYear}</strong> to admin?
+                <br /><br />
+                <span className="text-slate-600">
+                  {approvedCount} approved timesheet{approvedCount !== 1 ? "s" : ""} · {projectMembers.length} employee{projectMembers.length !== 1 ? "s" : ""}
+                </span>
+                <br />
+                All administrators will be notified.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleSubmitProject}
+                className="bg-[#217346] hover:bg-[#185c37] text-white"
+              >
+                Submit Project
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </DashboardLayout>
     );
   }
@@ -493,8 +687,45 @@ export default function ManagerTimesheetReviewPage() {
                 </p>
               </div>
             </div>
-            <StatusBadge status={viewingMember.status} />
+            <div className="flex items-center gap-2">
+              <StatusBadge status={viewingTimesheet?.status || viewingMember.status} />
+              {/* Approve / Reject buttons — only for submitted timesheets */}
+              {viewingTimesheet?.status === "submitted" && (
+                <>
+                  <Button
+                    size="sm"
+                    className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
+                    disabled={approving}
+                    onClick={() => setApproveConfirmOpen(true)}
+                  >
+                    {approving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ThumbsUp className="w-3.5 h-3.5" />}
+                    Approve
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5 border-red-300 text-red-600 hover:bg-red-50"
+                    disabled={approving}
+                    onClick={() => { setRejectReason(""); setRejectDialogOpen(true); }}
+                  >
+                    <ThumbsDown className="w-3.5 h-3.5" />
+                    Reject
+                  </Button>
+                </>
+              )}
+            </div>
           </div>
+
+          {/* Rejection reason banner — show if timesheet was rejected */}
+          {viewingTimesheet?.status === "rejected" && viewingTimesheet.rejection_reason && (
+            <div className="flex items-start gap-3 px-4 py-3 bg-red-50 border border-red-200 rounded-lg mb-4">
+              <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium text-red-800">Timesheet Rejected</p>
+                <p className="text-xs text-red-600 mt-0.5">{viewingTimesheet.rejection_reason}</p>
+              </div>
+            </div>
+          )}
 
           {detailLoading ? (
             <div className="flex items-center justify-center py-16 text-slate-400 gap-2">
@@ -584,6 +815,68 @@ export default function ManagerTimesheetReviewPage() {
             </>
           )}
         </div>
+
+        {/* ── Approve confirmation dialog ── */}
+        <AlertDialog open={approveConfirmOpen} onOpenChange={setApproveConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <ThumbsUp className="w-5 h-5 text-emerald-600" />
+                Approve Timesheet
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                Approve <strong>{viewingMember.employee_name}</strong>'s timesheet for{" "}
+                <strong>{MONTHS[selectedMonth]} {selectedYear}</strong>?
+                The employee will be notified.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleApprove}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              >
+                Approve
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* ── Reject dialog with reason ── */}
+        <AlertDialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <ThumbsDown className="w-5 h-5 text-red-600" />
+                Reject Timesheet
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                Reject <strong>{viewingMember.employee_name}</strong>'s timesheet for{" "}
+                <strong>{MONTHS[selectedMonth]} {selectedYear}</strong>?
+                Please provide a reason — the employee will be notified and can re-submit.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="py-2">
+              <textarea
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                placeholder="Enter rejection reason..."
+                rows={3}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-300 focus:border-red-400 resize-none"
+              />
+            </div>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleReject}
+                disabled={!rejectReason.trim()}
+                className="bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
+              >
+                Reject Timesheet
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </DashboardLayout>
     );
   }

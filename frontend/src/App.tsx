@@ -13,6 +13,7 @@ import EmployeeManagementPage from "./pages/EmployeeManagementPage";
 import ProjectDashboardPage from "./pages/ProjectDashboardPage";
 import AdminProjectsDashboardPage from "./pages/AdminProjectsDashboardPage";
 import AccountPage from "./pages/AccountPage";
+import NotificationsPage from "./pages/NotificationsPage";
 
 function RoleRedirect() {
   const { user, isLoading } = useAuth();
@@ -100,6 +101,16 @@ export default function App() {
         element={
           <ProtectedRoute roles={["ADMINISTRATOR"]}>
             <AdminProjectsDashboardPage />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Notifications — Employee & Manager */}
+      <Route
+        path="/notifications"
+        element={
+          <ProtectedRoute roles={["EMPLOYEE", "MANAGER"]}>
+            <NotificationsPage />
           </ProtectedRoute>
         }
       />

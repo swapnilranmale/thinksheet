@@ -9,6 +9,7 @@ import seedRoutes from "./routes/seed.js";
 import streamlineRoutes from "./routes/streamline.js";
 import employeeRoutes from "./routes/employees.js";
 import logRoutes from "./routes/logs.js";
+import notificationRoutes from "./routes/notifications.js";
 import User from "./models/users/User.js";
 
 import { fileURLToPath } from "url";
@@ -78,6 +79,7 @@ app.use("/api/seed", seedRoutes);
 app.use("/api/streamline", streamlineRoutes);
 app.use("/api/employees", employeeRoutes);
 app.use("/api/logs", logRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 app.get("/api/health", (_req, res) => res.json({ status: "ok", service: "thinksheet" }));
 

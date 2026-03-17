@@ -51,6 +51,7 @@ const MONTHS = [
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 const STATUS_OPTIONS: DayStatus[] = ["Working", "On leave", "Holiday", "Extra Working"];
+const WEEKEND_STATUS_OPTIONS: DayStatus[] = ["Holiday", "Extra Working"];
 
 const NOW = new Date();
 const CURRENT_YEAR = NOW.getFullYear();
@@ -79,6 +80,12 @@ function defaultStatus(d: Date): DayStatus {
   // Saturday (6) and Sunday (0) default to Holiday
   if (day === 0 || day === 6) return "Holiday";
   return "Working";
+}
+
+function getStatusOptionsForDay(d: Date): DayStatus[] {
+  const day = d.getDay();
+  if (day === 0 || day === 6) return WEEKEND_STATUS_OPTIONS; // Sat & Sun: Holiday or Extra Working
+  return STATUS_OPTIONS;                                      // Weekdays: all options
 }
 
 function defaultBillable(_status: DayStatus): number {
@@ -371,7 +378,7 @@ export default function EmployeeTimesheetPage() {
   // ── Derived ───────────────────────────────────────────────────────────────
 
   const status = timesheet?.status ?? "draft";
-  const isLocked = status === "submitted";
+  const isLocked = status === "submitted" || status === "approved" || status === "rejected";
 
   const workingEntries = Object.entries(cells).filter(
     ([, c]) => c.status === "Working" || c.status === "Extra Working"
@@ -390,11 +397,18 @@ export default function EmployeeTimesheetPage() {
       const existing = prev[dateKey] ?? emptyCell();
       const updated = { ...existing, ...patch };
 
-      // Auto-adjust billable hours when status changes
+      // Auto-adjust when status changes
       if (patch.status && patch.status !== existing.status) {
-        const newBillable = defaultBillable(patch.status);
-        updated.billable_hours = newBillable;
-        updated.worked_hours = newBillable;
+        if (patch.status === "Holiday" || patch.status === "On leave") {
+          // Clear billable hours and tasks for non-working statuses
+          updated.billable_hours = 0;
+          updated.worked_hours = 0;
+          updated.tasks = "";
+        } else {
+          const newBillable = defaultBillable(patch.status);
+          updated.billable_hours = newBillable;
+          updated.worked_hours = newBillable;
+        }
       }
 
       const next = { ...prev, [dateKey]: updated };
@@ -617,10 +631,22 @@ export default function EmployeeTimesheetPage() {
               onChange={(m, y) => { setSelectedMonth(m); setSelectedYear(y); }}
             />
 
-            {isLocked && (
-              <Badge className="bg-green-100 text-green-700 border border-green-200 gap-1">
+            {status === "submitted" && (
+              <Badge className="bg-blue-100 text-blue-700 border border-blue-200 gap-1">
                 <CheckCircle2 className="w-3.5 h-3.5" />
                 Submitted
+              </Badge>
+            )}
+            {status === "approved" && (
+              <Badge className="bg-emerald-100 text-emerald-700 border border-emerald-200 gap-1">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Approved
+              </Badge>
+            )}
+            {status === "rejected" && (
+              <Badge className="bg-red-100 text-red-700 border border-red-200 gap-1">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Rejected
               </Badge>
             )}
 
@@ -653,15 +679,15 @@ export default function EmployeeTimesheetPage() {
           </div>
         </div>
 
-        {/* ── Submitted banner ── */}
-        {isLocked && (
-          <div className="flex items-center gap-3 px-4 py-3 bg-green-50 border border-green-200 rounded-lg mb-4">
-            <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0" />
+        {/* ── Status banner ── */}
+        {status === "submitted" && (
+          <div className="flex items-center gap-3 px-4 py-3 bg-blue-50 border border-blue-200 rounded-lg mb-4">
+            <CheckCircle2 className="w-5 h-5 text-blue-600 shrink-0" />
             <div className="flex-1">
-              <p className="text-sm font-medium text-green-800">
+              <p className="text-sm font-medium text-blue-800">
                 Timesheet submitted for {MONTHS[selectedMonth]} {selectedYear}
               </p>
-              <p className="text-xs text-green-600">
+              <p className="text-xs text-blue-600">
                 Your manager can now review your entries. Use &quot;Edit&quot; to recall and make changes.
               </p>
             </div>
@@ -670,7 +696,7 @@ export default function EmployeeTimesheetPage() {
               size="sm"
               onClick={handleRecall}
               disabled={saving}
-              className="gap-1.5 border-green-300 text-green-700 hover:bg-green-100 shrink-0"
+              className="gap-1.5 border-blue-300 text-blue-700 hover:bg-blue-100 shrink-0"
             >
               {saving ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -678,6 +704,46 @@ export default function EmployeeTimesheetPage() {
                 <Pencil className="w-3.5 h-3.5" />
               )}
               Edit
+            </Button>
+          </div>
+        )}
+        {status === "approved" && (
+          <div className="flex items-center gap-3 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-lg mb-4">
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-emerald-800">
+                Timesheet approved for {MONTHS[selectedMonth]} {selectedYear}
+              </p>
+              <p className="text-xs text-emerald-600">
+                Your timesheet has been reviewed and approved by your manager.
+              </p>
+            </div>
+          </div>
+        )}
+        {status === "rejected" && (
+          <div className="flex items-center gap-3 px-4 py-3 bg-red-50 border border-red-200 rounded-lg mb-4">
+            <CheckCircle2 className="w-5 h-5 text-red-600 shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-red-800">
+                Timesheet rejected for {MONTHS[selectedMonth]} {selectedYear}
+              </p>
+              <p className="text-xs text-red-600">
+                {timesheet?.rejection_reason || "Please review the feedback and re-submit."}
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRecall}
+              disabled={saving}
+              className="gap-1.5 border-red-300 text-red-700 hover:bg-red-100 shrink-0"
+            >
+              {saving ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Pencil className="w-3.5 h-3.5" />
+              )}
+              Edit &amp; Re-submit
             </Button>
           </div>
         )}
@@ -739,7 +805,7 @@ export default function EmployeeTimesheetPage() {
                               onChange={(e) => patchCell(dateKey, { status: e.target.value as DayStatus, saved: false })}
                               className={`text-[10px] font-semibold rounded px-1.5 py-0.5 border outline-none cursor-pointer ${statusBadgeClass(cell.status)}`}
                             >
-                              {STATUS_OPTIONS.map((s) => (
+                              {getStatusOptionsForDay(day).map((s) => (
                                 <option key={s} value={s}>{s}</option>
                               ))}
                             </select>
@@ -770,9 +836,9 @@ export default function EmployeeTimesheetPage() {
                           {dayName}
                         </td>
 
-                        {/* Task Description */}
+                        {/* Task Description — editable only for Working / Extra Working */}
                         <td style={{ ...td, padding: "3px 6px" }}>
-                          {isLocked ? (
+                          {isLocked || cell.status === "Holiday" || cell.status === "On leave" ? (
                             cell.tasks ? (
                               cell.tasks.includes("\n") ? (
                                 <ul className="space-y-0.5 list-none">
@@ -797,9 +863,9 @@ export default function EmployeeTimesheetPage() {
                           )}
                         </td>
 
-                        {/* Billable Hours */}
+                        {/* Billable Hours — editable only for Working / Extra Working */}
                         <td style={td} className="text-center">
-                          {isLocked ? (
+                          {isLocked || cell.status === "Holiday" || cell.status === "On leave" ? (
                             <span className={`font-mono font-semibold ${
                               cell.billable_hours > 0 ? "text-gray-800" : "text-gray-400"
                             }`}>

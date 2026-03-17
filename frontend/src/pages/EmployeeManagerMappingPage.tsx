@@ -57,6 +57,7 @@ import {
   User,
   Lock,
   MoreVertical,
+  Layers,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -1649,6 +1650,160 @@ function LogsTab() {
   );
 }
 
+// ── Project Master Tab ────────────────────────────────────────────────────────
+
+interface FlatProject {
+  project_id: string;
+  project_name: string;
+  project_code: string;
+  client_name: string;
+  resource_count: number;
+  start_date: string | null;
+  end_date: string | null;
+}
+
+function ProjectMasterTab() {
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
+  const [projects, setProjects] = useState<FlatProject[]>([]);
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    streamlineService.getMyResourceProjects()
+      .then(res => {
+        // Flatten all projects with their client names, dedup by project_id
+        const projMap: Record<string, FlatProject> = {};
+        for (const p of res.data) {
+          const key = p.project_id || p.project_name;
+          if (!projMap[key]) {
+            projMap[key] = {
+              project_id: p.project_id,
+              project_name: p.project_name,
+              project_code: p.project_code,
+              client_name: p.client_name || "No Client",
+              resource_count: p.resource_count,
+              start_date: p.start_date,
+              end_date: p.end_date,
+            };
+          } else {
+            // Accumulate resource count from duplicates
+            projMap[key].resource_count += p.resource_count;
+          }
+        }
+        const sorted = Object.values(projMap).sort((a, b) => a.project_name.localeCompare(b.project_name));
+        setProjects(sorted);
+      })
+      .catch(err => toast.error(getErrorMessage(err, "Failed to load projects")))
+      .finally(() => setLoading(false));
+  }, []);
+
+  function handleProjectClick(proj: FlatProject) {
+    const now = new Date();
+    const meta = { [proj.project_id]: { project_name: proj.project_name, project_code: proj.project_code, client_name: proj.client_name } };
+    navigate(`/admin/projects?projects=${proj.project_id}&month=${now.getMonth() + 1}&year=${now.getFullYear()}`, { state: meta });
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16 text-slate-400 gap-2">
+        <Loader2 className="w-5 h-5 animate-spin" /><span>Loading projects…</span>
+      </div>
+    );
+  }
+
+  if (projects.length === 0) {
+    return (
+      <div className="border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center py-16 text-slate-400">
+        <Layers className="w-10 h-10 mb-3 opacity-30" />
+        <p className="font-medium text-slate-600">No projects found</p>
+        <p className="text-sm mt-1">Sync to populate project data</p>
+      </div>
+    );
+  }
+
+  const filtered = search.trim()
+    ? projects.filter(p =>
+        p.project_name.toLowerCase().includes(search.toLowerCase()) ||
+        p.client_name.toLowerCase().includes(search.toLowerCase()) ||
+        (p.project_code || "").toLowerCase().includes(search.toLowerCase())
+      )
+    : projects;
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col h-full">
+      {/* Toolbar */}
+      <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 shrink-0 gap-3 flex-wrap">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div className="relative min-w-[220px] max-w-sm flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Search projects or clients..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="w-full h-9 pl-9 pr-4 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]/40 focus:border-[#217346] transition-colors"
+            />
+          </div>
+          <span className="text-sm text-slate-500 whitespace-nowrap">
+            <strong className="text-slate-700">{projects.length}</strong> project{projects.length !== 1 ? "s" : ""}
+          </span>
+        </div>
+      </div>
+      {/* Table */}
+      <div className="overflow-auto flex-1">
+        <table className="w-full text-sm">
+          <thead className="sticky top-0 z-10">
+            <tr className="bg-[#217346] text-white text-xs">
+              <th className="px-4 py-3 text-left font-semibold w-8">#</th>
+              <th className="px-4 py-3 text-left font-semibold">Project Name</th>
+              <th className="px-4 py-3 text-left font-semibold">Client</th>
+              <th className="px-4 py-3 text-center font-semibold">Resources</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {filtered.map((proj, i) => (
+              <tr
+                key={proj.project_id}
+                onClick={() => handleProjectClick(proj)}
+                className="hover:bg-slate-50 transition-colors cursor-pointer group"
+              >
+                <td className="px-4 py-3 text-slate-400 text-xs font-mono">{i + 1}</td>
+                <td className="px-4 py-3">
+                  <span className="font-medium text-slate-800 group-hover:text-[#217346] transition-colors">
+                    {proj.project_name || "Unnamed Project"}
+                  </span>
+                </td>
+                <td className="px-4 py-3">
+                  <span className="flex items-center gap-1.5 text-slate-600">
+                    <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    {proj.client_name}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <span className="text-xs text-slate-500">{proj.resource_count}</span>
+                </td>
+              </tr>
+            ))}
+            {filtered.length === 0 && (
+              <tr>
+                <td colSpan={4} className="py-16 text-center text-slate-400 text-sm">
+                  No projects match "{search}"
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      {/* Footer */}
+      <div className="shrink-0 border-t border-slate-100 px-5 py-3 flex items-center justify-between bg-white">
+        <span className="text-xs text-slate-400">
+          Showing <strong>{filtered.length}</strong> of <strong>{projects.length}</strong> project{projects.length !== 1 ? "s" : ""}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 // ── Projects Tab ──────────────────────────────────────────────────────────────
 
 interface ClientGroup {
@@ -2559,20 +2714,21 @@ function AdminsTab() {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
-type Tab = "admins" | "managers" | "employees" | "logs" | "projects";
+type Tab = "admins" | "managers" | "employees" | "logs" | "projects" | "project-master";
 
 const TAB_CONFIG: { id: Tab; label: string; displayLabel?: string; icon: ReactNode }[] = [
   { id: "admins", label: "Admins", displayLabel: "Administrators", icon: <Shield className="w-4 h-4" /> },
   { id: "managers", label: "Managers", icon: <Users className="w-4 h-4" /> },
   { id: "employees", label: "Employees", icon: <Users className="w-4 h-4" /> },
   { id: "projects", label: "Projects", displayLabel: "Clients & Projects", icon: <FolderOpen className="w-4 h-4" /> },
+  { id: "project-master", label: "Project Master", icon: <Layers className="w-4 h-4" /> },
   { id: "logs", label: "Activity Logs", icon: <ScrollText className="w-4 h-4" /> },
 ];
 
 export default function EmployeeManagerMappingPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const validTabs: Tab[] = ["admins", "managers", "employees", "logs", "projects"];
+  const validTabs: Tab[] = ["admins", "managers", "employees", "logs", "projects", "project-master"];
   const tabParam = searchParams.get("tab") as Tab | null;
   const activeTab: Tab = tabParam && validTabs.includes(tabParam) ? tabParam : "admins";
 
@@ -2599,6 +2755,7 @@ export default function EmployeeManagerMappingPage() {
           {activeTab === "employees" && <EmployeesTab />}
           {activeTab === "logs" && <LogsTab />}
           {activeTab === "projects" && <ProjectsTab />}
+          {activeTab === "project-master" && <ProjectMasterTab />}
         </div>
       </div>
     </DashboardLayout>

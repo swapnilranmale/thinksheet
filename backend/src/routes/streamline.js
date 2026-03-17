@@ -801,7 +801,7 @@ router.post('/sync', authenticate, checkActive, authorize(['ADMINISTRATOR']), as
 
                 // ── Ensure User credentials exist for this employee ────────────
                 // Engineering Managers → MANAGER role, everyone else → EMPLOYEE.
-                // Uses emp_id (empCode) as the default login password.
+                // Default password: Think@2026 (user must change on first login).
                 // If a User already exists for this email it is left unchanged.
                 const isEngineeringManager = ENGG_MANAGER_RE.test(designation);
                 try {
@@ -813,7 +813,7 @@ router.post('/sync', authenticate, checkActive, authorize(['ADMINISTRATOR']), as
                     if (!existingUser) {
                         const newUser = await User.create({
                             email: empEmail.toLowerCase(),
-                            password: empCode,  // emp_id is the default password
+                            password: 'Think@2026',  // default password — forced change on first login
                             full_name: empName,
                             role: isEngineeringManager ? 'MANAGER' : 'EMPLOYEE',
                             tenant_id: tenantId,
@@ -843,27 +843,39 @@ router.post('/sync', authenticate, checkActive, authorize(['ADMINISTRATOR']), as
                         if (isEngineeringManager) {
                             managerByEmail[empEmail.toLowerCase()] = newUser._id;
                         }
-                    } else if (isEngineeringManager) {
-                        // Existing user: promote to MANAGER if not already, and ensure team_ids is correct
+                    } else {
+                        // Existing user: update role/team if needed, and fix password for users
+                        // who never logged in (still have must_change_password: true).
                         let changed = false;
-                        if (existingUser.role !== 'MANAGER') {
-                            existingUser.role = 'MANAGER';
-                            existingUser.permissions = {
-                                module_access: [
-                                    { module_name: 'timesheet', functions: ['view'], submodules: [] }
-                                ],
-                                can_approve_expenses: false,
-                                can_create_users: false,
-                                approval_limit: null
-                            };
+
+                        // Reset password to standard default if user never changed it
+                        if (existingUser.must_change_password) {
+                            existingUser.password = 'Think@2026';
+                            existingUser.markModified('password');
                             changed = true;
                         }
-                        if (resolvedTeamId && !existingUser.team_ids.includes(resolvedTeamId)) {
-                            existingUser.team_ids = [...new Set([...existingUser.team_ids, resolvedTeamId])];
-                            changed = true;
+
+                        if (isEngineeringManager) {
+                            if (existingUser.role !== 'MANAGER') {
+                                existingUser.role = 'MANAGER';
+                                existingUser.permissions = {
+                                    module_access: [
+                                        { module_name: 'timesheet', functions: ['view'], submodules: [] }
+                                    ],
+                                    can_approve_expenses: false,
+                                    can_create_users: false,
+                                    approval_limit: null
+                                };
+                                changed = true;
+                            }
+                            if (resolvedTeamId && !existingUser.team_ids.includes(resolvedTeamId)) {
+                                existingUser.team_ids = [...new Set([...existingUser.team_ids, resolvedTeamId])];
+                                changed = true;
+                            }
+                            managerByEmail[empEmail.toLowerCase()] = existingUser._id;
                         }
+
                         if (changed) await existingUser.save();
-                        managerByEmail[empEmail.toLowerCase()] = existingUser._id;
                     }
                 } catch (userErr) {
                     // Non-fatal: log but continue — employee record already saved

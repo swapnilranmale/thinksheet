@@ -1,4 +1,4 @@
-import { useState, ReactNode } from "react";
+import { useState, useEffect, useCallback, ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -12,11 +12,14 @@ import {
   X,
   ScrollText,
   FolderOpen,
+  Layers,
   Settings,
   ChevronDown,
   ChevronLeft,
+  Bell,
 } from "lucide-react";
 import { clsx } from "clsx";
+import { notificationService } from "@/services/timesheet";
 
 // ── Sidebar nav link ──────────────────────────────────────────────────────────
 
@@ -27,6 +30,7 @@ function SidebarLink({
   onClick,
   exact,
   collapsed = false,
+  badge,
 }: {
   to: string;
   icon: React.FC<{ className?: string }>;
@@ -34,6 +38,7 @@ function SidebarLink({
   onClick?: () => void;
   exact?: boolean;
   collapsed?: boolean;
+  badge?: number;
 }) {
   const location = useLocation();
   // Match by pathname + optional search param
@@ -71,8 +76,18 @@ function SidebarLink({
       {!collapsed && (
         <>
           <span className="flex-1 text-left">{label}</span>
-          {isActive && <ChevronRight className="w-3.5 h-3.5 opacity-80 animate-slide-in-left" />}
+          {badge !== undefined && badge > 0 && (
+            <span className="min-w-[18px] h-[18px] rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center px-1 shadow-sm">
+              {badge > 99 ? "99+" : badge}
+            </span>
+          )}
+          {isActive && !badge && <ChevronRight className="w-3.5 h-3.5 opacity-80 animate-slide-in-left" />}
         </>
+      )}
+      {collapsed && badge !== undefined && badge > 0 && (
+        <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-[16px] rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center px-1">
+          {badge > 99 ? "99+" : badge}
+        </span>
       )}
     </button>
   );
@@ -90,6 +105,23 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [unreadNotifs, setUnreadNotifs] = useState(0);
+
+  // Poll unread notification count every 30s
+  const fetchUnread = useCallback(async () => {
+    try {
+      const res = await notificationService.getUnreadCount();
+      setUnreadNotifs(res.unread);
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    if (user?.role === "EMPLOYEE" || user?.role === "MANAGER") {
+      fetchUnread();
+      const interval = setInterval(fetchUnread, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [user?.role, fetchUnread]);
 
   function handleLogout() {
     logout();
@@ -151,6 +183,15 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
               </p>
             )}
             <SidebarLink
+              to="/notifications"
+              icon={Bell}
+              label="Notifications"
+              onClick={() => handleNavClick("/notifications")}
+              exact
+              collapsed={collapsed}
+              badge={unreadNotifs}
+            />
+            <SidebarLink
               to="/dashboard"
               icon={LayoutDashboard}
               label="Dashboard"
@@ -176,6 +217,15 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                 Operations
               </p>
             )}
+            <SidebarLink
+              to="/notifications"
+              icon={Bell}
+              label="Notifications"
+              onClick={() => handleNavClick("/notifications")}
+              exact
+              collapsed={collapsed}
+              badge={unreadNotifs}
+            />
             <SidebarLink
               to="/workspace?tab=projects"
               icon={FolderOpen}
@@ -235,6 +285,13 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
               icon={FolderOpen}
               label="Clients & Projects"
               onClick={() => handleNavClick("/timesheet/mapping?tab=projects")}
+              collapsed={collapsed}
+            />
+            <SidebarLink
+              to="/timesheet/mapping?tab=project-master"
+              icon={Layers}
+              label="Project Master"
+              onClick={() => handleNavClick("/timesheet/mapping?tab=project-master")}
               collapsed={collapsed}
             />
             <SidebarLink

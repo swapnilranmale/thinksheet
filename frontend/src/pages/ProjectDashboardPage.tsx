@@ -32,15 +32,33 @@ const MONTHS = [
   "July", "August", "September", "October", "November", "December",
 ];
 
-const STATUS_CONFIG = {
-  submitted: {
-    label: "Submitted",
+const STATUS_CONFIG: Record<string, { label: string; badge: string; icon: typeof CheckCircle2; iconClass: string; statBg: string; statText: string; statCount: string }> = {
+  approved: {
+    label: "Approved",
     badge: "bg-emerald-50 text-emerald-700 border-emerald-200",
     icon: CheckCircle2,
     iconClass: "text-emerald-500",
     statBg: "bg-emerald-50 border-emerald-100",
     statText: "text-emerald-700",
     statCount: "text-emerald-900",
+  },
+  submitted: {
+    label: "Submitted",
+    badge: "bg-blue-50 text-blue-700 border-blue-200",
+    icon: CheckCircle2,
+    iconClass: "text-blue-500",
+    statBg: "bg-blue-50 border-blue-100",
+    statText: "text-blue-700",
+    statCount: "text-blue-900",
+  },
+  rejected: {
+    label: "Rejected",
+    badge: "bg-red-50 text-red-700 border-red-200",
+    icon: CircleDashed,
+    iconClass: "text-red-500",
+    statBg: "bg-red-50 border-red-100",
+    statText: "text-red-700",
+    statCount: "text-red-900",
   },
   draft: {
     label: "In Progress",

@@ -50,12 +50,25 @@ const timesheetSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        enum: ['draft', 'submitted'],
+        enum: ['draft', 'submitted', 'approved', 'rejected'],
         default: 'draft'
     },
     entries: [timesheetEntrySchema],
     submitted_at: {
         type: Date,
+        default: null
+    },
+    approved_by: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        default: null
+    },
+    approved_at: {
+        type: Date,
+        default: null
+    },
+    rejection_reason: {
+        type: String,
         default: null
     }
 }, {

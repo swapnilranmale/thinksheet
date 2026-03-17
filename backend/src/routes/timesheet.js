@@ -8,6 +8,8 @@ import express from 'express';
 import mongoose from 'mongoose';
 import { authenticate, checkActive, authorize } from '../middlewares/auth.js';
 import Timesheet from '../models/timesheet/Timesheet.js';
+import Notification from '../models/timesheet/Notification.js';
+import ProjectSubmission from '../models/timesheet/ProjectSubmission.js';
 import EmployeeManagerMapping from '../models/timesheet/EmployeeManagerMapping.js';
 import Employee from '../models/users/Employee.js';
 import User from '../models/users/User.js';
@@ -108,8 +110,8 @@ router.get('/my-stats', ...auth, authorize(['EMPLOYEE']), async (req, res) => {
         let currentBillable = 0, currentWorking = 0, totalBillable = 0;
 
         for (const t of all) {
-            if (t.status === 'submitted') submitted++;
-            else if (t.status === 'draft') drafts++;
+            if (t.status === 'submitted' || t.status === 'approved') submitted++;
+            else if (t.status === 'draft' || t.status === 'rejected') drafts++;
 
             const isCurrent = t.month === currentMonth && t.year === currentYear;
             for (const e of t.entries) {
@@ -206,8 +208,8 @@ router.put('/:id', ...auth, authorize(['EMPLOYEE']), async (req, res) => {
             return res.status(404).json({ error: 'Timesheet not found' });
         }
 
-        if (timesheet.status === 'submitted') {
-            return res.status(403).json({ error: 'Cannot edit a submitted timesheet' });
+        if (timesheet.status === 'submitted' || timesheet.status === 'approved') {
+            return res.status(403).json({ error: 'Cannot edit a submitted or approved timesheet' });
         }
 
         timesheet.entries = entries || [];
@@ -273,6 +275,42 @@ router.put('/:id/submit', ...auth, authorize(['EMPLOYEE']), async (req, res) => 
         timesheet.submitted_at = new Date();
         await timesheet.save();
 
+        // ── Notify managers ────────────────────────────────────────────────
+        try {
+            const employee = await Employee.findOne({ tenant_id: tenantId, official_email: req.user.email, is_active: true }).lean();
+            const empName = employee?.employee_name || req.user.full_name || req.user.email;
+
+            // Find manager(s) via team_id
+            if (employee?.team_id) {
+                const managers = await User.find({
+                    tenant_id: tenantId,
+                    role: 'MANAGER',
+                    team_ids: employee.team_id,
+                    is_deleted: { $ne: true }
+                }).select('_id').lean();
+
+                const MONTH_NAMES = ['','January','February','March','April','May','June','July','August','September','October','November','December'];
+
+                for (const mgr of managers) {
+                    await Notification.create({
+                        tenant_id: tenantId,
+                        recipient_id: mgr._id,
+                        type: 'timesheet_submitted',
+                        title: 'Timesheet Submitted',
+                        message: `${empName} submitted their timesheet for ${MONTH_NAMES[timesheet.month]} ${timesheet.year}`,
+                        timesheet_id: timesheet._id,
+                        metadata: {
+                            employee_id: employee._id,
+                            employee_name: empName,
+                            project_id: timesheet.project_id,
+                            month: timesheet.month,
+                            year: timesheet.year,
+                        }
+                    });
+                }
+            }
+        } catch (_notifErr) { /* notification failure should not block submit */ }
+
         res.json({ success: true, data: timesheet, message: 'Timesheet submitted successfully' });
     } catch (err) {
         res.status(500).json({ error: 'Server error', message: err.message });
@@ -299,15 +337,164 @@ router.put('/:id/recall', ...auth, authorize(['EMPLOYEE']), async (req, res) => 
             return res.status(404).json({ error: 'Timesheet not found' });
         }
 
-        if (timesheet.status !== 'submitted') {
-            return res.status(400).json({ error: 'Timesheet is not submitted' });
+        if (timesheet.status === 'draft') {
+            return res.status(400).json({ error: 'Timesheet is already a draft' });
+        }
+        if (timesheet.status === 'approved') {
+            return res.status(400).json({ error: 'Cannot recall an approved timesheet' });
         }
 
         timesheet.status = 'draft';
         timesheet.submitted_at = null;
+        timesheet.approved_by = null;
+        timesheet.approved_at = null;
+        timesheet.rejection_reason = null;
         await timesheet.save();
 
         res.json({ success: true, data: timesheet, message: 'Timesheet recalled to draft' });
+    } catch (err) {
+        res.status(500).json({ error: 'Server error', message: err.message });
+    }
+});
+
+// ─── PUT /api/timesheet/:id/approve — manager approves a submitted timesheet ──
+router.put('/:id/approve', ...auth, authorize(['MANAGER', 'ADMINISTRATOR']), async (req, res) => {
+    try {
+        const tenantId = req.tenantIdString;
+        const { id } = req.params;
+
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ error: 'Invalid timesheet ID' });
+        }
+
+        const timesheet = await Timesheet.findOne({ _id: id, tenant_id: tenantId });
+        if (!timesheet) {
+            return res.status(404).json({ error: 'Timesheet not found' });
+        }
+
+        if (timesheet.status !== 'submitted') {
+            return res.status(400).json({ error: 'Only submitted timesheets can be approved' });
+        }
+
+        // Verify manager has access to this employee (via team_ids)
+        if (req.user.role === 'MANAGER') {
+            const empUser = await User.findOne({ _id: timesheet.user_id, tenant_id: tenantId }).lean();
+            if (empUser) {
+                const emp = await Employee.findOne({ tenant_id: tenantId, official_email: empUser.email, is_active: true }).lean();
+                if (emp) {
+                    const manager = await User.findById(req.user._id).select('team_ids').lean();
+                    const teamIdSet = new Set((manager?.team_ids || []).map(tid => tid.toString()));
+                    const empTeamId = emp.team_id?.toString();
+                    if (!empTeamId || !teamIdSet.has(empTeamId)) {
+                        return res.status(403).json({ error: 'Access denied: employee not under your management' });
+                    }
+                }
+            }
+        }
+
+        timesheet.status = 'approved';
+        timesheet.approved_by = req.user._id;
+        timesheet.approved_at = new Date();
+        timesheet.rejection_reason = null;
+        await timesheet.save();
+
+        // Notify the employee
+        try {
+            const empUser = await User.findOne({ _id: timesheet.user_id, tenant_id: tenantId }).lean();
+            const employee = empUser ? await Employee.findOne({ tenant_id: tenantId, official_email: empUser.email }).lean() : null;
+            const MONTH_NAMES = ['','January','February','March','April','May','June','July','August','September','October','November','December'];
+            await Notification.create({
+                tenant_id: tenantId,
+                recipient_id: timesheet.user_id,
+                type: 'timesheet_approved',
+                title: 'Timesheet Approved',
+                message: `Your timesheet for ${MONTH_NAMES[timesheet.month]} ${timesheet.year} has been approved by ${req.user.full_name || req.user.email}`,
+                timesheet_id: timesheet._id,
+                metadata: {
+                    employee_id: employee?._id || null,
+                    employee_name: employee?.employee_name || null,
+                    project_id: timesheet.project_id,
+                    month: timesheet.month,
+                    year: timesheet.year,
+                }
+            });
+        } catch (_notifErr) { /* notification failure should not block approve */ }
+
+        res.json({ success: true, data: timesheet, message: 'Timesheet approved' });
+    } catch (err) {
+        res.status(500).json({ error: 'Server error', message: err.message });
+    }
+});
+
+// ─── PUT /api/timesheet/:id/reject — manager rejects a submitted timesheet ───
+router.put('/:id/reject', ...auth, authorize(['MANAGER', 'ADMINISTRATOR']), async (req, res) => {
+    try {
+        const tenantId = req.tenantIdString;
+        const { id } = req.params;
+        const { reason } = req.body;
+
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ error: 'Invalid timesheet ID' });
+        }
+
+        if (!reason || !reason.trim()) {
+            return res.status(400).json({ error: 'Rejection reason is required' });
+        }
+
+        const timesheet = await Timesheet.findOne({ _id: id, tenant_id: tenantId });
+        if (!timesheet) {
+            return res.status(404).json({ error: 'Timesheet not found' });
+        }
+
+        if (timesheet.status !== 'submitted') {
+            return res.status(400).json({ error: 'Only submitted timesheets can be rejected' });
+        }
+
+        // Verify manager has access
+        if (req.user.role === 'MANAGER') {
+            const empUser = await User.findOne({ _id: timesheet.user_id, tenant_id: tenantId }).lean();
+            if (empUser) {
+                const emp = await Employee.findOne({ tenant_id: tenantId, official_email: empUser.email, is_active: true }).lean();
+                if (emp) {
+                    const manager = await User.findById(req.user._id).select('team_ids').lean();
+                    const teamIdSet = new Set((manager?.team_ids || []).map(tid => tid.toString()));
+                    const empTeamId = emp.team_id?.toString();
+                    if (!empTeamId || !teamIdSet.has(empTeamId)) {
+                        return res.status(403).json({ error: 'Access denied: employee not under your management' });
+                    }
+                }
+            }
+        }
+
+        timesheet.status = 'rejected';
+        timesheet.rejection_reason = reason.trim();
+        timesheet.approved_by = req.user._id;
+        timesheet.approved_at = new Date();
+        await timesheet.save();
+
+        // Notify the employee
+        try {
+            const empUser = await User.findOne({ _id: timesheet.user_id, tenant_id: tenantId }).lean();
+            const employee = empUser ? await Employee.findOne({ tenant_id: tenantId, official_email: empUser.email }).lean() : null;
+            const MONTH_NAMES = ['','January','February','March','April','May','June','July','August','September','October','November','December'];
+            await Notification.create({
+                tenant_id: tenantId,
+                recipient_id: timesheet.user_id,
+                type: 'timesheet_rejected',
+                title: 'Timesheet Rejected',
+                message: `Your timesheet for ${MONTH_NAMES[timesheet.month]} ${timesheet.year} was rejected: ${reason.trim()}`,
+                timesheet_id: timesheet._id,
+                metadata: {
+                    employee_id: employee?._id || null,
+                    employee_name: employee?.employee_name || null,
+                    project_id: timesheet.project_id,
+                    month: timesheet.month,
+                    year: timesheet.year,
+                }
+            });
+        } catch (_notifErr) { /* notification failure should not block reject */ }
+
+        res.json({ success: true, data: timesheet, message: 'Timesheet rejected' });
     } catch (err) {
         res.status(500).json({ error: 'Server error', message: err.message });
     }
@@ -597,6 +784,177 @@ router.get('/employee/:employeeId', ...auth, authorize(['MANAGER', 'ADMINISTRATO
         const timesheet = await Timesheet.findOne(tsQuery).lean();
 
         res.json({ success: true, employee, data: timesheet || null });
+    } catch (err) {
+        res.status(500).json({ error: 'Server error', message: err.message });
+    }
+});
+
+// ─── POST /api/timesheet/project/:projectId/submit-project — manager submits project to admin
+router.post('/project/:projectId/submit-project', ...auth, authorize(['MANAGER']), async (req, res) => {
+    try {
+        const tenantId = req.tenantIdString;
+        const { projectId } = req.params;
+        const { month, year, project_name, project_code, client_id, client_name } = req.body;
+
+        if (!month || !year) {
+            return res.status(400).json({ error: 'month and year are required' });
+        }
+
+        // Check if already submitted
+        const existing = await ProjectSubmission.findOne({
+            tenant_id: tenantId, project_id: projectId, month, year
+        });
+        if (existing) {
+            return res.status(400).json({ error: 'Project already submitted for this month' });
+        }
+
+        // Get all team members for this project (same logic as GET /project/:projectId)
+        const projectMappings = await EmployeeManagerMapping.find({
+            tenant_id: tenantId, project_id: projectId, is_deleted: { $ne: true }
+        }).populate('employee_id', 'employee_name official_email team_id').lean();
+
+        // Filter by manager's teams
+        const manager = await User.findById(req.user._id).select('team_ids').lean();
+        const teamIdSet = new Set((manager?.team_ids || []).map(id => id.toString()));
+        const mappings = projectMappings.filter(m => {
+            const empTeamId = m.employee_id?.team_id?.toString();
+            return empTeamId && teamIdSet.has(empTeamId);
+        });
+
+        if (mappings.length === 0) {
+            return res.status(400).json({ error: 'No employees found for this project' });
+        }
+
+        // Get timesheets for all employees
+        const employeeEmails = mappings.map(m => m.employee_id?.official_email).filter(Boolean);
+        const employeeUsers = await User.find({
+            tenant_id: tenantId, email: { $in: employeeEmails }, role: 'EMPLOYEE', is_deleted: { $ne: true }
+        }).lean();
+        const userIds = employeeUsers.map(u => u._id);
+
+        const projectObjectId = mongoose.Types.ObjectId.isValid(projectId)
+            ? new mongoose.Types.ObjectId(projectId) : null;
+        const tsQuery = { tenant_id: tenantId, user_id: { $in: userIds }, month, year };
+        if (projectObjectId) tsQuery.project_id = projectObjectId;
+
+        const timesheets = await Timesheet.find(tsQuery).lean();
+
+        // Validate ALL timesheets are approved
+        const notApproved = [];
+        const userIdToTs = {};
+        timesheets.forEach(ts => { userIdToTs[ts.user_id.toString()] = ts; });
+
+        let totalBillable = 0;
+        for (const empUser of employeeUsers) {
+            const ts = userIdToTs[empUser._id.toString()];
+            if (!ts || ts.status !== 'approved') {
+                const emp = mappings.find(m => m.employee_id?.official_email === empUser.email);
+                notApproved.push(emp?.employee_id?.employee_name || empUser.email);
+            } else {
+                totalBillable += ts.entries?.reduce((s, e) => s + (e.billable_hours || 0), 0) || 0;
+            }
+        }
+        // Also check employees without user accounts
+        for (const m of mappings) {
+            const hasUser = employeeUsers.some(u => u.email === m.employee_id?.official_email);
+            if (!hasUser) {
+                notApproved.push(m.employee_id?.employee_name || 'Unknown');
+            }
+        }
+
+        if (notApproved.length > 0) {
+            return res.status(400).json({
+                error: `Cannot submit: ${notApproved.length} employee(s) not approved`,
+                employees: notApproved
+            });
+        }
+
+        const MONTH_NAMES = ['','January','February','March','April','May','June','July','August','September','October','November','December'];
+
+        const submission = await ProjectSubmission.create({
+            tenant_id: tenantId,
+            project_id: projectId,
+            project_name: project_name || '',
+            project_code: project_code || '',
+            client_id: client_id || null,
+            client_name: client_name || '',
+            month,
+            year,
+            status: 'submitted',
+            submitted_by: req.user._id,
+            submitted_at: new Date(),
+            total_employees: mappings.length,
+            total_billable_hours: totalBillable,
+        });
+
+        // Notify all admins
+        try {
+            const admins = await User.find({
+                tenant_id: tenantId, role: 'ADMINISTRATOR', is_deleted: { $ne: true }
+            }).select('_id').lean();
+
+            for (const admin of admins) {
+                await Notification.create({
+                    tenant_id: tenantId,
+                    recipient_id: admin._id,
+                    type: 'project_submitted',
+                    title: 'Project Submitted',
+                    message: `${req.user.full_name || req.user.email} submitted ${project_name || 'project'} for ${MONTH_NAMES[month]} ${year}`,
+                    metadata: {
+                        project_id: projectId,
+                        project_name: project_name || '',
+                        month,
+                        year,
+                    }
+                });
+            }
+        } catch (_notifErr) { /* notification failure should not block */ }
+
+        res.status(201).json({ success: true, data: submission });
+    } catch (err) {
+        if (err.code === 11000) {
+            return res.status(400).json({ error: 'Project already submitted for this month' });
+        }
+        res.status(500).json({ error: 'Server error', message: err.message });
+    }
+});
+
+// ─── GET /api/timesheet/project/:projectId/submission?month=X&year=Y — check submission status
+router.get('/project/:projectId/submission', ...auth, authorize(['MANAGER', 'ADMINISTRATOR']), async (req, res) => {
+    try {
+        const tenantId = req.tenantIdString;
+        const { projectId } = req.params;
+        const month = parseInt(req.query.month);
+        const year = parseInt(req.query.year);
+
+        if (!month || !year) {
+            return res.status(400).json({ error: 'month and year are required' });
+        }
+
+        const submission = await ProjectSubmission.findOne({
+            tenant_id: tenantId, project_id: projectId, month, year
+        }).populate('submitted_by', 'full_name email').lean();
+
+        res.json({ success: true, data: submission || null });
+    } catch (err) {
+        res.status(500).json({ error: 'Server error', message: err.message });
+    }
+});
+
+// ─── GET /api/timesheet/project-submissions?month=X&year=Y — admin lists all project submissions
+router.get('/project-submissions', ...auth, authorize(['ADMINISTRATOR']), async (req, res) => {
+    try {
+        const tenantId = req.tenantIdString;
+        const query = { tenant_id: tenantId };
+        if (req.query.month) query.month = parseInt(req.query.month);
+        if (req.query.year) query.year = parseInt(req.query.year);
+
+        const submissions = await ProjectSubmission.find(query)
+            .populate('submitted_by', 'full_name email')
+            .sort({ submitted_at: -1 })
+            .lean();
+
+        res.json({ success: true, data: submissions });
     } catch (err) {
         res.status(500).json({ error: 'Server error', message: err.message });
     }

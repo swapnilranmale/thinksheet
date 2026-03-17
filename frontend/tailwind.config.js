@@ -48,6 +48,7 @@ export default {
         "badge-appear": "badge-appear 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)",
         "spin-smooth": "spin-smooth 1s linear infinite",
         "text-fade": "text-fade 0.6s ease-out",
+        "bell-ring": "bell-ring 1s ease-in-out 3",
       },
       keyframes: {
         "fade-in": {
@@ -99,6 +100,18 @@ export default {
         "text-fade": {
           "from": { opacity: "0", transform: "translateY(10px)" },
           "to": { opacity: "1", transform: "translateY(0)" },
+        },
+        "bell-ring": {
+          "0%": { transform: "rotate(0deg)" },
+          "10%": { transform: "rotate(14deg)" },
+          "20%": { transform: "rotate(-12deg)" },
+          "30%": { transform: "rotate(10deg)" },
+          "40%": { transform: "rotate(-8deg)" },
+          "50%": { transform: "rotate(6deg)" },
+          "60%": { transform: "rotate(-4deg)" },
+          "70%": { transform: "rotate(2deg)" },
+          "80%": { transform: "rotate(-1deg)" },
+          "100%": { transform: "rotate(0deg)" },
         },
       },
     },
