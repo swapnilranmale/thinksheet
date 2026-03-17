@@ -11,6 +11,7 @@ import express from 'express';
 import mongoose from 'mongoose';
 import { authenticate, checkActive, authorize } from '../middlewares/auth.js';
 import Employee from '../models/users/Employee.js';
+import EmployeeManagerMapping from '../models/timesheet/EmployeeManagerMapping.js';
 import User from '../models/users/User.js';
 import { logActivity } from '../utils/logActivity.js';
 
@@ -42,14 +43,43 @@ router.get('/me',
 );
 
 // ── GET /api/employees — list Streamline-synced employees (team-filtered for managers) ──
+// Only returns employees that are mapped to at least one project (have an active
+// EmployeeManagerMapping record). The Employee Master stores ALL Streamline employees,
+// but this endpoint surfaces only those assigned as resources to projects.
 router.get('/',
     authenticate, checkActive, authorize(['ADMINISTRATOR', 'MANAGER']),
     async (req, res) => {
         try {
+            // ── Step 1: Determine which employees are mapped to projects ──────────
+            const mappingFilter = {
+                tenant_id: TENANT_ID,
+                is_deleted: { $ne: true },
+                is_active: true,
+            };
+            const mappedEmployeeIds = await EmployeeManagerMapping.distinct('employee_id', mappingFilter);
+
+            if (mappedEmployeeIds.length === 0) {
+                return res.json({
+                    success: true,
+                    data: [],
+                    pagination: { total: 0, page: 1, limit: 20, pages: 0 },
+                });
+            }
+
+            // ── Step 2: Build employee filter ─────────────────────────────────────
             const filter = {
+                _id: { $in: mappedEmployeeIds },
                 tenant_id: TENANT_ID,
                 is_deleted: { $ne: true },
                 synced_from_streamline: true,
+                // Only show employees that have a non-empty resource_id (actual resource
+                // assignment from Streamline Resource Master, e.g. "UPID-26-03-1").
+                // Excludes employees imported from Employee Master only.
+                $and: [
+                    { resource_id: { $exists: true } },
+                    { resource_id: { $ne: null } },
+                    { resource_id: { $ne: '' } },
+                ],
                 // Engineering Managers are shown in the Managers tab, not here
                 is_engineering_manager: { $ne: true },
             };
@@ -154,6 +184,8 @@ router.put('/:id',
                 if (team_name) employee.team_name = team_name;
             }
 
+            // Mark as locally modified so Streamline sync preserves these edits
+            employee.locally_modified = true;
             await employee.save();
             res.json({ success: true, data: employee });
         } catch (err) {

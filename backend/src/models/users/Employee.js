@@ -60,6 +60,12 @@ const employeeSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
+    // Set to true when admin/manager edits this record locally.
+    // Prevents Streamline sync from overwriting user-editable fields.
+    locally_modified: {
+        type: Boolean,
+        default: false
+    },
     is_active: {
         type: Boolean,
         default: true

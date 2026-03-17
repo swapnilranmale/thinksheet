@@ -867,7 +867,7 @@ function EmployeesTab() {
         setSyncResult(result);
         setSyncResultOpen(true);
         if (!auto) {
-          toast.success(`Sync complete — ${result.new_employees_count} new employee${result.new_employees_count !== 1 ? "s" : ""} synced. Login password = Employee ID.`);
+          toast.success(`Sync complete — ${result.new_employees_count} new employee${result.new_employees_count !== 1 ? "s" : ""} synced. Default password: Think@2026`);
         }
       } else if (!auto) {
         toast.info("No new employees found in Streamline360.");
@@ -968,19 +968,15 @@ function EmployeesTab() {
             <span><strong className="text-slate-700">{pagination.total}</strong> employee{pagination.total !== 1 ? "s" : ""}</span>
           </div>
         </div>
-        <div className="flex items-center gap-2 flex-wrap justify-end">
-          <Button
-            variant="outline"
-            onClick={() => handleSync(false)}
-            disabled={syncing}
-            className="gap-2 border-blue-200 text-blue-700 hover:bg-blue-50 whitespace-nowrap"
-            title="Fetch all employees and project assignments from Streamline360 Resource Master"
-          >
-            {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-            {syncing ? "Syncing..." : "Sync"}
-          </Button>
-        </div>
       </div>
+
+      {/* Syncing indicator — shown as a banner when syncing over existing data */}
+      {syncing && employees.length > 0 && (
+        <div className="flex items-center gap-2 px-4 py-2.5 mb-3 bg-[#217346]/5 border border-[#217346]/20 rounded-lg animate-slide-up">
+          <Loader2 className="w-4 h-4 animate-spin text-[#217346] shrink-0" />
+          <span className="text-sm text-[#217346] font-medium">Syncing employees from Streamline360…</span>
+        </div>
+      )}
 
       <div className="flex-1 min-h-0">
       {loading || (syncing && employees.length === 0) ? (
@@ -992,7 +988,7 @@ function EmployeesTab() {
         <div className="border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center py-16 text-slate-400">
           <Users className="w-10 h-10 mb-3 opacity-30" />
           <p className="font-medium text-slate-600">{searchQuery || filterTeamId !== "all" ? "No employees match your filters" : "No employees yet"}</p>
-          <p className="text-sm mt-1">{searchQuery || filterTeamId !== "all" ? "Try adjusting your search or team filter" : "Click \"Sync\" to import employees from Streamline360"}</p>
+          <p className="text-sm mt-1">{searchQuery || filterTeamId !== "all" ? "Try adjusting your search or team filter" : "Employees will sync automatically from Streamline360"}</p>
         </div>
       ) : (
         <>
@@ -1458,7 +1454,7 @@ function EmployeesTab() {
                 </div>
               )}
               <p className="text-xs text-slate-400 bg-slate-50 rounded-lg px-3 py-2 border border-slate-100 leading-relaxed">
-                Login credentials created for each employee. Default password = Employee ID. Employees without a matched manager can be assigned from the Mapping tab.
+                Login credentials created for each employee. Default password: <strong>Think@2026</strong>. Employees must change it on first login. Employees without a matched manager can be assigned from the Mapping tab.
               </p>
             </div>
           )}

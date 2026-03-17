@@ -156,23 +156,29 @@ async function ensureEmployeeUser(employee, tenantId) {
     const existing = await User.findOne({
         email: employee.official_email.toLowerCase(),
         tenant_id: tenantId,
-        role: 'EMPLOYEE',
         is_deleted: { $ne: true }
     });
 
     if (existing) {
-        // Always sync password to current unique_id (covers reset/re-mapping scenarios)
-        existing.password = employee.unique_id;
-        existing.full_name = employee.employee_name;
-        existing.is_active = true;
-        await existing.save();
+        // Sync name and active status, but do NOT overwrite password —
+        // only reset password if user never changed it (must_change_password still true)
+        let changed = false;
+        if (existing.full_name !== employee.employee_name) {
+            existing.full_name = employee.employee_name;
+            changed = true;
+        }
+        if (!existing.is_active) {
+            existing.is_active = true;
+            changed = true;
+        }
+        if (changed) await existing.save();
         return existing;
     }
 
-    // Create new EMPLOYEE user: password = unique_id (hashed by pre-save hook)
+    // Create new EMPLOYEE user: default password Think@2026 (forced change on first login)
     const user = await User.create({
         email: employee.official_email.toLowerCase(),
-        password: employee.unique_id,
+        password: 'Think@2026',
         full_name: employee.employee_name,
         role: 'EMPLOYEE',
         tenant_id: tenantId,

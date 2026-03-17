@@ -701,26 +701,48 @@ router.post('/sync', authenticate, checkActive, authorize(['ADMINISTRATOR']), as
                 // Use resolvedTeam._id for team_id if available (resource records have no team_id)
                 const resolvedTeamId = resolvedTeam?._id?.toString() || teamId || '';
 
-                const empUpdate = {
-                    employee_name: empName,
-                    official_email: empEmail,
-                    designation,
-                    team_id: resolvedTeamId,
-                    team_name: teamName,
-                    profile_resource: profileResource,
-                    actual_resource: actualResource,
-                    resource_id: resourceId,
-                    synced_from_streamline: true,
-                    is_engineering_manager: ENGG_MANAGER_RE.test(designation),
-                    is_active: true,
-                    is_deleted: false,
-                    tenant_id: tenantId,
-                };
-                if (departmentId) empUpdate.department_id = departmentId;
+                // Check if this employee was locally modified by an admin/manager.
+                // If so, only update Streamline-specific fields (resource data) and
+                // preserve user-edited fields (name, designation, team).
+                const existingEmp = await Employee.findOne({ unique_id: empCode, tenant_id: tenantId }).lean();
+                const isLocallyModified = existingEmp?.locally_modified === true;
+
+                let empUpdate;
+                if (isLocallyModified) {
+                    // Preserve local edits — only sync Streamline resource fields
+                    empUpdate = {
+                        profile_resource: profileResource,
+                        actual_resource: actualResource,
+                        resource_id: resourceId,
+                        synced_from_streamline: true,
+                        is_active: true,
+                        is_deleted: false,
+                        tenant_id: tenantId,
+                    };
+                } else {
+                    // No local edits — full sync from Streamline
+                    empUpdate = {
+                        employee_name: empName,
+                        official_email: empEmail,
+                        designation,
+                        team_id: resolvedTeamId,
+                        team_name: teamName,
+                        profile_resource: profileResource,
+                        actual_resource: actualResource,
+                        resource_id: resourceId,
+                        synced_from_streamline: true,
+                        is_engineering_manager: ENGG_MANAGER_RE.test(designation),
+                        is_active: true,
+                        is_deleted: false,
+                        tenant_id: tenantId,
+                    };
+                }
+                if (!isLocallyModified && departmentId) empUpdate.department_id = departmentId;
 
                 let empDoc = null;
                 try {
                     // Primary upsert: by unique_id + tenant_id (the Streamline employee ID)
+                    // For new employees: $setOnInsert adds unique_id + all Streamline fields
                     const empRaw = await Employee.findOneAndUpdate(
                         { unique_id: empCode, tenant_id: tenantId },
                         { $set: empUpdate, $setOnInsert: { unique_id: empCode } },
@@ -984,60 +1006,94 @@ router.post('/sync', authenticate, checkActive, authorize(['ADMINISTRATOR']), as
             const teamName2 = (rawTeamId2 && streamlineTeamMap[rawTeamId2]?.team_name) || '';
 
             try {
+                // Check if locally modified — preserve user-edited fields
+                const existingEmp2 = await Employee.findOne({ unique_id: empCode2, tenant_id: tenantId }).lean();
+                const isLocallyModified2 = existingEmp2?.locally_modified === true;
+
+                const empSet2 = isLocallyModified2
+                    ? {
+                        // Locally modified: only sync system fields, preserve user edits
+                        synced_from_streamline: true,
+                        is_active: true,
+                        is_deleted: false,
+                        tenant_id: tenantId,
+                    }
+                    : {
+                        // Full sync from Streamline
+                        employee_name: empName2,
+                        official_email: empEmail2,
+                        designation: designation2,
+                        team_id: rawTeamId2,
+                        team_name: teamName2,
+                        synced_from_streamline: true,
+                        is_engineering_manager: isEngineeringManager2,
+                        is_active: true,
+                        is_deleted: false,
+                        tenant_id: tenantId,
+                    };
+
                 const empRaw2 = await Employee.findOneAndUpdate(
                     { unique_id: empCode2, tenant_id: tenantId },
                     {
-                        $set: {
-                            employee_name: empName2,
-                            official_email: empEmail2,
-                            designation: designation2,
-                            team_id: rawTeamId2,
-                            team_name: teamName2,
-                            synced_from_streamline: true,
-                            is_engineering_manager: isEngineeringManager2,
-                            is_active: true,
-                            is_deleted: false,
-                            tenant_id: tenantId,
-                        },
+                        $set: empSet2,
                         $setOnInsert: { unique_id: empCode2 }
                     },
                     { upsert: true, new: true, includeResultMetadata: true }
                 );
                 const isNewEmp2 = !empRaw2.lastErrorObject?.updatedExisting;
 
-                // Create MANAGER credentials for engineering managers; skip credentials for regular employees
-                // without resource records (they don't have project mappings and can't log timesheets).
-                if (isEngineeringManager2) {
-                    try {
-                        const existingUser2 = await User.findOne({
+                // Ensure User credentials exist for ALL employees from Employee Master.
+                // Engineering Managers → MANAGER role, everyone else → EMPLOYEE.
+                // Default password: Think@2026 (forced change on first login).
+                try {
+                    const existingUser2 = await User.findOne({
+                        email: empEmail2.toLowerCase(),
+                        tenant_id: tenantId,
+                        is_deleted: { $ne: true }
+                    });
+                    if (!existingUser2) {
+                        const newUser2 = await User.create({
                             email: empEmail2.toLowerCase(),
+                            password: 'Think@2026',
+                            full_name: empName2,
+                            role: isEngineeringManager2 ? 'MANAGER' : 'EMPLOYEE',
                             tenant_id: tenantId,
-                            is_deleted: { $ne: true }
+                            designation: designation2,
+                            team_ids: isEngineeringManager2 && rawTeamId2 ? [rawTeamId2] : [],
+                            is_active: true,
+                            is_deleted: false,
+                            must_change_password: true,
+                            permissions: isEngineeringManager2 ? {
+                                module_access: [
+                                    { module_name: 'timesheet', functions: ['view'], submodules: [] }
+                                ],
+                                can_approve_expenses: false,
+                                can_create_users: false,
+                                approval_limit: null
+                            } : {
+                                module_access: [
+                                    { module_name: 'timesheet', functions: ['view', 'create', 'edit'], submodules: [] }
+                                ],
+                                can_approve_expenses: false,
+                                can_create_users: false,
+                                approval_limit: null
+                            }
                         });
-                        if (!existingUser2) {
-                            const newMgr = await User.create({
-                                email: empEmail2.toLowerCase(),
-                                password: empCode2,
-                                full_name: empName2,
-                                role: 'MANAGER',
-                                tenant_id: tenantId,
-                                designation: designation2,
-                                team_ids: rawTeamId2 ? [rawTeamId2] : [],
-                                is_active: true,
-                                is_deleted: false,
-                                must_change_password: true,
-                                permissions: {
-                                    module_access: [
-                                        { module_name: 'timesheet', functions: ['view'], submodules: [] }
-                                    ],
-                                    can_approve_expenses: false,
-                                    can_create_users: false,
-                                    approval_limit: null
-                                }
-                            });
-                            managerByEmail[empEmail2.toLowerCase()] = newMgr._id;
-                            console.log(`[Streamline sync] Manager credentials created (Employee Master): ${empName2} (${empCode2})`);
-                        } else if (existingUser2.role !== 'MANAGER') {
+                        if (isEngineeringManager2) {
+                            managerByEmail[empEmail2.toLowerCase()] = newUser2._id;
+                        }
+                        console.log(`[Streamline sync] User credentials created (Employee Master): ${empName2} (${empCode2}) role=${newUser2.role}`);
+                    } else {
+                        // Existing user: fix password if never changed, promote to MANAGER if needed
+                        let changed2 = false;
+
+                        if (existingUser2.must_change_password) {
+                            existingUser2.password = 'Think@2026';
+                            existingUser2.markModified('password');
+                            changed2 = true;
+                        }
+
+                        if (isEngineeringManager2 && existingUser2.role !== 'MANAGER') {
                             existingUser2.role = 'MANAGER';
                             existingUser2.permissions = {
                                 module_access: [
@@ -1047,15 +1103,20 @@ router.post('/sync', authenticate, checkActive, authorize(['ADMINISTRATOR']), as
                                 can_create_users: false,
                                 approval_limit: null
                             };
-                            if (rawTeamId2 && !existingUser2.team_ids.includes(rawTeamId2)) {
-                                existingUser2.team_ids = [...new Set([...existingUser2.team_ids, rawTeamId2])];
-                            }
-                            await existingUser2.save();
+                            changed2 = true;
+                        }
+                        if (isEngineeringManager2 && rawTeamId2 && !existingUser2.team_ids.includes(rawTeamId2)) {
+                            existingUser2.team_ids = [...new Set([...existingUser2.team_ids, rawTeamId2])];
+                            changed2 = true;
+                        }
+                        if (isEngineeringManager2) {
                             managerByEmail[empEmail2.toLowerCase()] = existingUser2._id;
                         }
-                    } catch (userErr2) {
-                        console.warn(`[Streamline sync] Could not create Manager User for ${empEmail2}: ${userErr2.message}`);
+
+                        if (changed2) await existingUser2.save();
                     }
+                } catch (userErr2) {
+                    console.warn(`[Streamline sync] Could not create/update User for ${empEmail2}: ${userErr2.message}`);
                 }
 
                 results.employees_synced++;
