@@ -607,3 +607,95 @@ export const activityLogService = {
     return res.data;
   },
 };
+
+// ── Dashboard Types & API ─────────────────────────────────────────────────────
+
+export interface AdminDashboardStats {
+  month: number;
+  year: number;
+  totalEmployees: number;
+  timesheetsSubmitted: number;
+  submissionRate: number;
+  orgBillability: number;
+  overtimeMembers: number;
+  pendingApprovals: number;
+  missingTimesheets: number;
+  totalBillableHours: number;
+  totalWorkedHours: number;
+  teamWiseStats: {
+    teamName: string;
+    members: number;
+    submitted: number;
+    submissionRate: number;
+    billability: number;
+  }[];
+  managerPerformance: {
+    managerId: string;
+    managerName: string;
+    teamName: string;
+    pending: number;
+    avgApprovalHours: number | null;
+    allClear: boolean;
+  }[];
+  nonCompliant: {
+    userId: string;
+    name: string;
+    team: string;
+    issue: string;
+    manager: string;
+    daysOverdue: number;
+  }[];
+  alerts: {
+    type: string;
+    severity: 'critical' | 'warning' | 'info' | 'success';
+    name: string;
+    team: string;
+    message: string;
+  }[];
+}
+
+export interface ManagerDashboardStats {
+  month: number;
+  year: number;
+  totalMembers: number;
+  submittedCount: number;
+  pendingApproval: number;
+  teamBillability: number;
+  missingCount: number;
+  oldestPendingHours: number | null;
+  totalBillableHours: number;
+  approvalQueue: {
+    timesheetId: string;
+    employeeName: string;
+    employeeInitials: string;
+    designation: string;
+    totalHours: number;
+    submittedAt: string;
+    periodStart: string | null;
+    periodEnd: string | null;
+  }[];
+  memberWiseStatus: {
+    userId: string;
+    name: string;
+    initials: string;
+    designation: string;
+    weekDays: { Mon: number | null; Tue: number | null; Wed: number | null; Thu: number | null; Fri: number | null };
+    totalHours: number;
+    billability: number;
+    status: string;
+  }[];
+  projectWiseHours: { name: string; hours: number }[];
+  memberHoursOverview: { name: string; hours: number; isOvertime: boolean }[];
+}
+
+export const dashboardService = {
+  getAdminStats: async () => {
+    const res = await api.get<{ success: boolean; data: AdminDashboardStats }>('/dashboard/admin-stats');
+    return res.data;
+  },
+
+  getManagerStats: async () => {
+    const res = await api.get<{ success: boolean; data: ManagerDashboardStats }>('/dashboard/manager-stats');
+    return res.data;
+  },
+};

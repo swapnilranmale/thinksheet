@@ -117,7 +117,7 @@ const TAB_LABELS: Record<string, string> = {
 function getPageTitle(pathname: string, searchParams: URLSearchParams): { title: string; crumbs: string[] } {
   const tab = searchParams.get("tab");
 
-  if (pathname === "/dashboard") return { title: "Dashboard", crumbs: ["My Workspace"] };
+  if (pathname === "/dashboard") return { title: "Dashboard", crumbs: [] };
   if (pathname === "/dashboard/projects") return { title: "My Projects", crumbs: ["My Workspace"] };
   if (pathname === "/timesheet/employee") return { title: "Timesheet", crumbs: ["My Workspace", "My Projects"] };
   if (pathname === "/notifications") return { title: "Notifications", crumbs: [] };
@@ -236,6 +236,14 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
               </p>
             )}
             <SidebarLink
+              to="/dashboard"
+              icon={LayoutDashboard}
+              label="Dashboard"
+              onClick={() => handleNavClick("/dashboard")}
+              exact
+              collapsed={collapsed}
+            />
+            <SidebarLink
               to="/notifications"
               icon={Bell}
               label="Notifications"
@@ -243,14 +251,6 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
               exact
               collapsed={collapsed}
               badge={unreadNotifs}
-            />
-            <SidebarLink
-              to="/dashboard"
-              icon={LayoutDashboard}
-              label="Dashboard"
-              onClick={() => handleNavClick("/dashboard")}
-              exact
-              collapsed={collapsed}
             />
             <SidebarLink
               to="/dashboard/projects"
@@ -271,6 +271,14 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                 Operations
               </p>
             )}
+            <SidebarLink
+              to="/dashboard"
+              icon={LayoutDashboard}
+              label="Dashboard"
+              onClick={() => handleNavClick("/dashboard")}
+              exact
+              collapsed={collapsed}
+            />
             <SidebarLink
               to="/notifications"
               icon={Bell}
@@ -314,6 +322,14 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                 Administration
               </p>
             )}
+            <SidebarLink
+              to="/dashboard"
+              icon={LayoutDashboard}
+              label="Dashboard"
+              onClick={() => handleNavClick("/dashboard")}
+              exact
+              collapsed={collapsed}
+            />
             <SidebarLink
               to="/timesheet/mapping?tab=admins"
               icon={Shield}

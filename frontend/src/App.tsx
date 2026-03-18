@@ -12,6 +12,8 @@ import EmployeeManagerMappingPage from "./pages/EmployeeManagerMappingPage";
 import EmployeeManagementPage from "./pages/EmployeeManagementPage";
 import ProjectDashboardPage from "./pages/ProjectDashboardPage";
 import AdminProjectsDashboardPage from "./pages/AdminProjectsDashboardPage";
+import AdminDashboardPage from "./pages/AdminDashboardPage";
+import ManagerDashboardPage from "./pages/ManagerDashboardPage";
 import AccountPage from "./pages/AccountPage";
 import NotificationsPage from "./pages/NotificationsPage";
 
@@ -19,9 +21,14 @@ function RoleRedirect() {
   const { user, isLoading } = useAuth();
   if (isLoading) return null;
   if (!user) return <Navigate to="/login" replace />;
-  if (user.role === "ADMINISTRATOR") return <Navigate to="/timesheet/mapping" replace />;
-  if (user.role === "MANAGER") return <Navigate to="/workspace?tab=projects" replace />;
   return <Navigate to="/dashboard" replace />;
+}
+
+function RoleDashboard() {
+  const { user } = useAuth();
+  if (user?.role === "ADMINISTRATOR") return <AdminDashboardPage />;
+  if (user?.role === "MANAGER") return <ManagerDashboardPage />;
+  return <EmployeeDashboardPage />;
 }
 
 export default function App() {
@@ -32,12 +39,12 @@ export default function App() {
       <Route path="/signup" element={<SignupPage />} />
       <Route path="/change-password" element={<ChangePasswordPage />} />
 
-      {/* Employee: dashboard → projects → timesheet */}
+      {/* Dashboard — role-aware (each role sees their own view) */}
       <Route
         path="/dashboard"
         element={
-          <ProtectedRoute roles={["EMPLOYEE"]}>
-            <EmployeeDashboardPage />
+          <ProtectedRoute roles={["EMPLOYEE", "MANAGER", "ADMINISTRATOR"]}>
+            <RoleDashboard />
           </ProtectedRoute>
         }
       />

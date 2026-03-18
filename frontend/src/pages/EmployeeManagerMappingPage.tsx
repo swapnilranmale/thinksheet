@@ -114,6 +114,135 @@ function FieldError({ msg }: { msg?: string }) {
   return <p className="text-xs text-red-500 mt-1">{msg}</p>;
 }
 
+// ── Column filter dropdown ────────────────────────────────────────────────────
+
+function ColumnFilter({
+  values,
+  selected,
+  onChange,
+  darkBg = false,
+}: {
+  values: string[];
+  selected: Set<string>;
+  onChange: (next: Set<string>) => void;
+  darkBg?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handle(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [open]);
+
+  const filtered = search.trim()
+    ? values.filter(v => v.toLowerCase().includes(search.toLowerCase()))
+    : values;
+  const allSelected = filtered.length > 0 && filtered.every(v => selected.has(v));
+  const isFiltered = selected.size > 0;
+
+  function toggleAll() {
+    const next = new Set(selected);
+    if (allSelected) filtered.forEach(v => next.delete(v));
+    else filtered.forEach(v => next.add(v));
+    onChange(next);
+  }
+
+  function toggle(v: string) {
+    const next = new Set(selected);
+    next.has(v) ? next.delete(v) : next.add(v);
+    onChange(next);
+  }
+
+  return (
+    <div ref={ref} className="relative inline-flex items-center">
+      <button
+        onClick={e => { e.stopPropagation(); setOpen(o => !o); }}
+        title="Filter column"
+        className={`ml-1 p-0.5 rounded transition-colors ${
+          isFiltered
+            ? "text-amber-300"
+            : darkBg
+            ? "text-white/50 hover:text-white"
+            : "text-slate-400 hover:text-slate-700"
+        }`}
+      >
+        {/* Funnel icon */}
+        <svg className="w-3 h-3" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M1.5 2.5A.5.5 0 0 1 2 2h12a.5.5 0 0 1 .354.854L10 6.707V13.5a.5.5 0 0 1-.724.447l-3-1.5A.5.5 0 0 1 6 12V6.707L1.646 2.854A.5.5 0 0 1 1.5 2.5z" />
+        </svg>
+      </button>
+
+      {open && (
+        <div
+          className="absolute top-full left-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-50 w-52 overflow-hidden"
+          onClick={e => e.stopPropagation()}
+        >
+          {/* Search */}
+          <div className="px-2.5 pt-2.5 pb-2 border-b border-slate-100">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400" />
+              <input
+                autoFocus
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search..."
+                className="w-full pl-6 pr-2 py-1 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#217346]/40 bg-slate-50"
+              />
+            </div>
+          </div>
+
+          {/* Options */}
+          <div className="max-h-48 overflow-y-auto py-1">
+            {/* Select All */}
+            <label className="flex items-center gap-2 px-3 py-1.5 hover:bg-[#217346]/5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={allSelected && filtered.length > 0}
+                onChange={toggleAll}
+                className="w-3.5 h-3.5 rounded accent-[#217346]"
+              />
+              <span className="text-xs font-semibold text-slate-700">Select All</span>
+            </label>
+            <div className="h-px bg-slate-100 mx-2 my-1" />
+            {filtered.map(v => (
+              <label key={v} className="flex items-center gap-2 px-3 py-1.5 hover:bg-[#217346]/5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={selected.has(v)}
+                  onChange={() => toggle(v)}
+                  className="w-3.5 h-3.5 rounded accent-[#217346]"
+                />
+                <span className="text-xs text-slate-600 truncate">{v}</span>
+              </label>
+            ))}
+            {filtered.length === 0 && (
+              <p className="px-3 py-2 text-xs text-slate-400 text-center">No options</p>
+            )}
+          </div>
+
+          {/* Clear */}
+          {isFiltered && (
+            <div className="border-t border-slate-100 px-3 py-2">
+              <button
+                onClick={() => { onChange(new Set()); setSearch(""); }}
+                className="text-xs text-red-500 hover:text-red-700 font-medium"
+              >
+                Clear filter ({selected.size})
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Create Manager Dialog ─────────────────────────────────────────────────────
 
 function CreateManagerDialog({
@@ -885,6 +1014,10 @@ function EmployeesTab() {
   const [pagination, setPagination] = useState({ total: 0, pages: 1 });
   const PAGE_SIZE = 20;
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [empColFilters, setEmpColFilters] = useState<Record<string, Set<string>>>({ team_name: new Set() });
+  function setEmpColFilter(key: string, vals: Set<string>) {
+    setEmpColFilters(prev => ({ ...prev, [key]: vals }));
+  }
 
   // View state
   const [viewTarget, setViewTarget] = useState<EmployeeMaster | null>(null);
@@ -1106,12 +1239,16 @@ function EmployeesTab() {
                     <th className="text-left px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Actual Resource</th>
                     <th className="text-left px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Profile Resource</th>
                     <th className="text-left px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Email</th>
-                    <th className="text-left px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Team</th>
+                    <th className="text-left px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">
+                      <span className="flex items-center gap-0.5">Team
+                        <ColumnFilter values={[...new Set(employees.map(e => e.team_name || ""))].filter(Boolean).sort()} selected={empColFilters.team_name} onChange={v => setEmpColFilter("team_name", v)} />
+                      </span>
+                    </th>
                     <th className="text-right px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {employees.map(emp => (
+                  {employees.filter(e => empColFilters.team_name.size === 0 || empColFilters.team_name.has(e.team_name || "")).map(emp => (
                     <tr key={emp._id} className="hover:bg-slate-50/80 transition-colors group cursor-default">
                       <td className="px-5 py-3.5">
                         <div className="flex items-center gap-3">
@@ -1604,6 +1741,8 @@ function LogsTab() {
   const [pagination, setPagination] = useState({ total: 0, pages: 1 });
   const [search, setSearch] = useState("");
   const [actionFilter, setActionFilter] = useState("all");
+  const [logsColFilters, setLogsColFilters] = useState<Record<string, Set<string>>>({ performed_by_name: new Set() });
+  function setLogsColFilter(key: string, vals: Set<string>) { setLogsColFilters(prev => ({ ...prev, [key]: vals })); }
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadLogs = useCallback(async (p: number, q: string, action: string) => {
@@ -1733,13 +1872,17 @@ function LogsTab() {
                   <tr>
                     <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wide whitespace-nowrap">Action</th>
                     <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wide">Target</th>
-                    <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wide whitespace-nowrap">Performed By</th>
+                    <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wide whitespace-nowrap">
+                      <span className="flex items-center gap-0.5">Performed By
+                        <ColumnFilter values={[...new Set(logs.map(l => l.performed_by_name || ""))].filter(Boolean).sort()} selected={logsColFilters.performed_by_name} onChange={v => setLogsColFilter("performed_by_name", v)} />
+                      </span>
+                    </th>
                     <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wide">Details</th>
                     <th className="text-right px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wide whitespace-nowrap">Date</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {logs.map((log) => (
+                  {logs.filter(l => logsColFilters.performed_by_name.size === 0 || logsColFilters.performed_by_name.has(l.performed_by_name || "")).map((log) => (
                     <tr key={log._id} className="hover:bg-slate-50/70 transition-colors group">
                       <td className="px-5 py-3.5">
                         <Badge
@@ -1843,6 +1986,14 @@ function ProjectMasterTab() {
   const [loading, setLoading] = useState(true);
   const [projects, setProjects] = useState<FlatProject[]>([]);
   const [search, setSearch] = useState("");
+  const [colFilters, setColFilters] = useState<Record<string, Set<string>>>({
+    project_name: new Set(),
+    client_name: new Set(),
+  });
+
+  function setColFilter(key: string, vals: Set<string>) {
+    setColFilters(prev => ({ ...prev, [key]: vals }));
+  }
 
   useEffect(() => {
     streamlineService.getMyResourceProjects()
@@ -1897,13 +2048,21 @@ function ProjectMasterTab() {
     );
   }
 
-  const filtered = search.trim()
-    ? projects.filter(p =>
-        p.project_name.toLowerCase().includes(search.toLowerCase()) ||
-        p.client_name.toLowerCase().includes(search.toLowerCase()) ||
-        (p.project_code || "").toLowerCase().includes(search.toLowerCase())
-      )
-    : projects;
+  const uniqueProjectNames = [...new Set(projects.map(p => p.project_name).filter(Boolean))].sort();
+  const uniqueClients = [...new Set(projects.map(p => p.client_name).filter(Boolean))].sort();
+
+  const filtered = projects.filter(p => {
+    const q = search.toLowerCase();
+    const matchesSearch = !q
+      || p.project_name.toLowerCase().includes(q)
+      || p.client_name.toLowerCase().includes(q)
+      || (p.project_code || "").toLowerCase().includes(q);
+    const matchesProjectName = colFilters.project_name.size === 0 || colFilters.project_name.has(p.project_name);
+    const matchesClient = colFilters.client_name.size === 0 || colFilters.client_name.has(p.client_name);
+    return matchesSearch && matchesProjectName && matchesClient;
+  });
+
+  const anyColFilter = Object.values(colFilters).some(s => s.size > 0);
 
   return (
     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col h-full">
@@ -1921,8 +2080,16 @@ function ProjectMasterTab() {
             />
           </div>
           <span className="text-sm text-slate-500 whitespace-nowrap">
-            <strong className="text-slate-700">{projects.length}</strong> project{projects.length !== 1 ? "s" : ""}
+            <strong className="text-slate-700">{filtered.length}</strong> of <strong className="text-slate-700">{projects.length}</strong> project{projects.length !== 1 ? "s" : ""}
           </span>
+          {anyColFilter && (
+            <button
+              onClick={() => setColFilters({ project_name: new Set(), client_name: new Set() })}
+              className="text-xs text-red-500 hover:text-red-700 underline underline-offset-2"
+            >
+              Clear column filters
+            </button>
+          )}
         </div>
       </div>
       {/* Table */}
@@ -1930,9 +2097,29 @@ function ProjectMasterTab() {
         <table className="w-full text-sm">
           <thead className="sticky top-0 z-10">
             <tr className="bg-[#217346] text-white text-xs">
-              <th className="px-4 py-3 text-left font-semibold w-8">#</th>
-              <th className="px-4 py-3 text-left font-semibold">Project Name</th>
-              <th className="px-4 py-3 text-left font-semibold">Client</th>
+              <th className="px-4 py-3 text-left font-semibold w-12">Sr. No.</th>
+              <th className="px-4 py-3 text-left font-semibold">
+                <span className="flex items-center gap-0.5">
+                  Project Name
+                  <ColumnFilter
+                    values={uniqueProjectNames}
+                    selected={colFilters.project_name}
+                    onChange={v => setColFilter("project_name", v)}
+                    darkBg
+                  />
+                </span>
+              </th>
+              <th className="px-4 py-3 text-left font-semibold">
+                <span className="flex items-center gap-0.5">
+                  Client
+                  <ColumnFilter
+                    values={uniqueClients}
+                    selected={colFilters.client_name}
+                    onChange={v => setColFilter("client_name", v)}
+                    darkBg
+                  />
+                </span>
+              </th>
               <th className="px-4 py-3 text-center font-semibold">Resources</th>
             </tr>
           </thead>
@@ -1963,7 +2150,7 @@ function ProjectMasterTab() {
             {filtered.length === 0 && (
               <tr>
                 <td colSpan={4} className="py-16 text-center text-slate-400 text-sm">
-                  No projects match "{search}"
+                  No projects match the current filters
                 </td>
               </tr>
             )}
@@ -2014,8 +2201,7 @@ function ProjectsTab() {
   const [clientSearch, setClientSearch] = useState("");
   const [projectSearch, setProjectSearch] = useState("");
 
-  // Multi-select for bulk export
-  const [selectedClientIds, setSelectedClientIds] = useState<Set<string>>(new Set());
+  // Multi-select for bulk export (projects view only)
   const [selectedProjectIds, setSelectedProjectIds] = useState<Set<string>>(new Set());
 
   // Timesheet status overlay for resources view
@@ -2026,6 +2212,12 @@ function ProjectsTab() {
   const [teamLoading, setTeamLoading] = useState(false);
   const [resourceSearch, setResourceSearch] = useState("");
   const [resourceStatusFilter, setResourceStatusFilter] = useState("all");
+  const [resourceColFilters, setResourceColFilters] = useState<Record<string, Set<string>>>({
+    name: new Set(), designation: new Set(), team_name: new Set(),
+  });
+  function setResourceColFilter(key: string, vals: Set<string>) {
+    setResourceColFilters(prev => ({ ...prev, [key]: vals }));
+  }
 
   // Export state
   const [exportOpen, setExportOpen] = useState(false);
@@ -2301,71 +2493,6 @@ function ProjectsTab() {
       ? clientGroups.filter(cg => cg.client_name.toLowerCase().includes(clientSearch.toLowerCase()))
       : clientGroups;
 
-    // Build export map for all projects
-    const projectMap: Record<string, AdminExportProject> = {};
-    for (const cg of clientGroups) {
-      for (const p of cg.projects) {
-        const key = p.project_id || `${cg.client_name}|||${p.project_name}`;
-        if (!projectMap[key]) {
-          projectMap[key] = { project_name: p.project_name, project_code: p.project_code, client_name: cg.client_name, resources: [] };
-        }
-        const seen = new Set(projectMap[key].resources.map(r => r.email));
-        for (const r of p.resources) {
-          if (!seen.has(r.email)) {
-            projectMap[key].resources.push({ name: r.name, email: r.email, designation: r.designation, team_name: r.team_name, resource_id: r.resource_id });
-            seen.add(r.email);
-          }
-        }
-      }
-    }
-    const allProjects: AdminExportProject[] = Object.values(projectMap);
-
-    // Build selected clients' export projects
-    const selectedClientsExport: AdminExportProject[] = selectedClientIds.size > 0
-      ? (() => {
-          const selMap: Record<string, AdminExportProject> = {};
-          for (const cg of clientGroups.filter(c => selectedClientIds.has(c.client_id))) {
-            for (const p of cg.projects) {
-              const key = p.project_id || `${cg.client_name}|||${p.project_name}`;
-              if (!selMap[key]) selMap[key] = { project_name: p.project_name, project_code: p.project_code, client_name: cg.client_name, resources: [] };
-              const seen = new Set(selMap[key].resources.map(r => r.email));
-              for (const r of p.resources) {
-                if (!seen.has(r.email)) { selMap[key].resources.push({ name: r.name, email: r.email, designation: r.designation, team_name: r.team_name, resource_id: r.resource_id }); seen.add(r.email); }
-              }
-            }
-          }
-          return Object.values(selMap);
-        })()
-      : [];
-
-    const allFilteredSelected = filteredClients.every(c => selectedClientIds.has(c.client_id));
-    const someSelected = filteredClients.some(c => selectedClientIds.has(c.client_id));
-
-    function toggleClientCheck(clientId: string, e: React.MouseEvent) {
-      e.stopPropagation();
-      setSelectedClientIds(prev => {
-        const next = new Set(prev);
-        next.has(clientId) ? next.delete(clientId) : next.add(clientId);
-        return next;
-      });
-    }
-
-    function toggleSelectAll() {
-      if (allFilteredSelected) {
-        setSelectedClientIds(prev => {
-          const next = new Set(prev);
-          filteredClients.forEach(c => next.delete(c.client_id));
-          return next;
-        });
-      } else {
-        setSelectedClientIds(prev => {
-          const next = new Set(prev);
-          filteredClients.forEach(c => next.add(c.client_id));
-          return next;
-        });
-      }
-    }
-
     return (
       <>
         {ExportDialog}
@@ -2387,82 +2514,28 @@ function ProjectsTab() {
                 <strong className="text-slate-700">{clientGroups.length}</strong> client{clientGroups.length !== 1 ? "s" : ""} · <strong className="text-slate-700">{clientGroups.reduce((s, c) => s + c.projects.length, 0)}</strong> projects
               </span>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              {selectedClientIds.size > 0 && (
-                <Button
-                  size="sm"
-                  className="gap-1.5 bg-[#217346] hover:bg-[#1a5c38] text-white"
-                  onClick={() => openExport(selectedClientsExport, `${selectedClientIds.size} Client${selectedClientIds.size > 1 ? "s" : ""} Selected`)}
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  Export {selectedClientIds.size} Selected
-                </Button>
-              )}
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-1.5 border-slate-200 text-slate-600 hover:bg-slate-50 shrink-0"
-                onClick={() => openExport(allProjects, "All Clients – All Projects")}
-              >
-                <Download className="w-3.5 h-3.5" />
-                Export All
-              </Button>
-            </div>
-          </div>
-
-          {/* Select-all row */}
-          <div className="flex items-center gap-3 px-5 py-2.5 border-b border-slate-100 bg-slate-50/50">
-            <input
-              type="checkbox"
-              checked={allFilteredSelected && filteredClients.length > 0}
-              ref={el => { if (el) el.indeterminate = someSelected && !allFilteredSelected; }}
-              onChange={toggleSelectAll}
-              className="w-4 h-4 rounded border-slate-300 text-[#217346] accent-[#217346] cursor-pointer"
-            />
-            <span className="text-xs text-slate-500 font-medium">
-              {selectedClientIds.size > 0 ? `${selectedClientIds.size} client${selectedClientIds.size > 1 ? "s" : ""} selected` : "Select all"}
-            </span>
-            {selectedClientIds.size > 0 && (
-              <button onClick={() => setSelectedClientIds(new Set())} className="text-xs text-slate-400 hover:text-slate-700 underline underline-offset-2 ml-1">
-                Clear
-              </button>
-            )}
           </div>
 
           {/* List */}
           <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
-            {filteredClients.map(cg => {
-              const isChecked = selectedClientIds.has(cg.client_id);
-              return (
-                <div
-                  key={cg.client_id}
-                  className={`flex items-center gap-3 px-5 py-4 hover:bg-slate-50/80 transition-colors group ${isChecked ? "bg-[#217346]/3" : ""}`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={isChecked}
-                    onChange={() => {}}
-                    onClick={e => toggleClientCheck(cg.client_id, e)}
-                    className="w-4 h-4 rounded border-slate-300 text-[#217346] accent-[#217346] cursor-pointer shrink-0"
-                  />
-                  <button
-                    onClick={() => { setSelectedClient(cg); setProjectView("projects"); setProjectSearch(""); setSelectedProjectIds(new Set()); }}
-                    className="flex items-center gap-4 flex-1 text-left min-w-0"
-                  >
-                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors ${isChecked ? "bg-[#217346]/15" : "bg-blue-50 group-hover:bg-blue-100"}`}>
-                      <Building2 className={`w-4 h-4 transition-colors ${isChecked ? "text-[#217346]" : "text-blue-500"}`} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className={`font-semibold transition-colors ${isChecked ? "text-[#217346]" : "text-slate-900 group-hover:text-[#217346]"}`}>{cg.client_name}</p>
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        {cg.projects.length} project{cg.projects.length !== 1 ? "s" : ""} · {cg.total_resources} resource{cg.total_resources !== 1 ? "s" : ""}
-                      </p>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-[#217346] transition-colors shrink-0" />
-                  </button>
+            {filteredClients.map(cg => (
+              <button
+                key={cg.client_id}
+                onClick={() => { setSelectedClient(cg); setProjectView("projects"); setProjectSearch(""); setSelectedProjectIds(new Set()); }}
+                className="w-full flex items-center gap-4 px-5 py-4 hover:bg-slate-50/80 transition-colors group text-left"
+              >
+                <div className="w-9 h-9 rounded-xl bg-blue-50 group-hover:bg-blue-100 flex items-center justify-center shrink-0 transition-colors">
+                  <Building2 className="w-4 h-4 text-blue-500" />
                 </div>
-              );
-            })}
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-slate-900 group-hover:text-[#217346] transition-colors">{cg.client_name}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {cg.projects.length} project{cg.projects.length !== 1 ? "s" : ""} · {cg.total_resources} resource{cg.total_resources !== 1 ? "s" : ""}
+                  </p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-[#217346] transition-colors shrink-0" />
+              </button>
+            ))}
             {filteredClients.length === 0 && (
               <div className="flex items-center justify-center py-16 text-slate-400">
                 <p className="text-sm">No clients match "{clientSearch}"</p>
@@ -2471,10 +2544,9 @@ function ProjectsTab() {
           </div>
 
           {/* Footer */}
-          <div className="shrink-0 border-t border-slate-100 px-5 py-3 flex items-center justify-between bg-white">
+          <div className="shrink-0 border-t border-slate-100 px-5 py-3 bg-white">
             <span className="text-xs text-slate-400">
               Showing <strong>{filteredClients.length}</strong> of <strong>{clientGroups.length}</strong> client{clientGroups.length !== 1 ? "s" : ""}
-              {selectedClientIds.size > 0 && <span className="ml-1 text-[#217346] font-medium">· {selectedClientIds.size} selected</span>}
             </span>
           </div>
         </div>
@@ -2712,6 +2784,9 @@ function ProjectsTab() {
     };
 
     const q = resourceSearch.toLowerCase();
+    const uniqueResourceNames = [...new Set(selectedProject.resources.map(r => r.name || ""))].filter(Boolean).sort();
+    const uniqueDesignations = [...new Set(selectedProject.resources.map(r => r.designation || ""))].filter(Boolean).sort();
+    const uniqueTeamNames = [...new Set(selectedProject.resources.map(r => r.team_name || ""))].filter(Boolean).sort();
     const filteredResources = selectedProject.resources.filter(r => {
       const member = teamData.get(r.email?.toLowerCase() ?? "");
       const status = member?.status ?? "not_started";
@@ -2722,7 +2797,10 @@ function ProjectsTab() {
         || r.designation?.toLowerCase().includes(q)
         || r.team_name?.toLowerCase().includes(q);
       const matchesStatus = resourceStatusFilter === "all" || status === resourceStatusFilter;
-      return matchesSearch && matchesStatus;
+      const matchesColName = resourceColFilters.name.size === 0 || resourceColFilters.name.has(r.name || "");
+      const matchesColDes = resourceColFilters.designation.size === 0 || resourceColFilters.designation.has(r.designation || "");
+      const matchesColTeam = resourceColFilters.team_name.size === 0 || resourceColFilters.team_name.has(r.team_name || "");
+      return matchesSearch && matchesStatus && matchesColName && matchesColDes && matchesColTeam;
     });
 
     return (
@@ -2806,12 +2884,24 @@ function ProjectsTab() {
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 z-10">
                     <tr className="bg-[#217346] text-white text-xs">
-                      <th className="px-4 py-3 text-left font-semibold w-8">#</th>
-                      <th className="px-4 py-3 text-left font-semibold">Name</th>
+                      <th className="px-4 py-3 text-left font-semibold w-8">Sr. No.</th>
+                      <th className="px-4 py-3 text-left font-semibold">
+                        <span className="flex items-center gap-0.5">Name
+                          <ColumnFilter darkBg values={uniqueResourceNames} selected={resourceColFilters.name} onChange={v => setResourceColFilter("name", v)} />
+                        </span>
+                      </th>
                       <th className="px-4 py-3 text-left font-semibold">Resource ID</th>
                       <th className="px-4 py-3 text-left font-semibold">Email</th>
-                      <th className="px-4 py-3 text-left font-semibold">Designation</th>
-                      <th className="px-4 py-3 text-left font-semibold">Team</th>
+                      <th className="px-4 py-3 text-left font-semibold">
+                        <span className="flex items-center gap-0.5">Designation
+                          <ColumnFilter darkBg values={uniqueDesignations} selected={resourceColFilters.designation} onChange={v => setResourceColFilter("designation", v)} />
+                        </span>
+                      </th>
+                      <th className="px-4 py-3 text-left font-semibold">
+                        <span className="flex items-center gap-0.5">Team
+                          <ColumnFilter darkBg values={uniqueTeamNames} selected={resourceColFilters.team_name} onChange={v => setResourceColFilter("team_name", v)} />
+                        </span>
+                      </th>
                       <th className="px-4 py-3 text-left font-semibold">Timesheet Status</th>
                       <th className="px-4 py-3 text-right font-semibold">Worked Hrs</th>
                     </tr>
