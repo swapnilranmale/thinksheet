@@ -3,15 +3,11 @@ import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Badge } from "@/components/ui/badge";
 import { getErrorMessage } from "@/lib/api";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { MonthCalendarPicker } from "@/components/ui/month-calendar-picker";
 import {
   ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
   Loader2,
   Users,
   CheckCircle2,
@@ -87,21 +83,46 @@ export default function ProjectDashboardPage() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Project meta from navigation state (passed from project list)
+  // Project meta + sibling project list from navigation state
   const stateMeta = location.state as {
     project_name?: string;
     project_code?: string;
     client_name?: string;
+    projectList?: { project_id: string; project_name: string; project_code: string; client_name: string }[];
+    currentIndex?: number;
   } | null;
 
+  const projectList   = stateMeta?.projectList   ?? [];
+  const currentIndex  = stateMeta?.currentIndex  ?? -1;
+  const hasPrev = currentIndex > 0;
+  const hasNext = currentIndex >= 0 && currentIndex < projectList.length - 1;
+
+  function goToSibling(offset: number) {
+    const next = projectList[currentIndex + offset];
+    if (!next) return;
+    navigate(`/projects/${next.project_id}`, {
+      state: { ...stateMeta, project_name: next.project_name, project_code: next.project_code, client_name: next.client_name, currentIndex: currentIndex + offset },
+      replace: true,
+    });
+  }
+
   const now = new Date();
+  // month is 1-indexed (1=Jan) for the API; MonthCalendarPicker uses 0-indexed
   const [month, setMonth] = useState(now.getMonth() + 1);
-  const [year, setYear] = useState(now.getFullYear());
-  const [team, setTeam] = useState<ProjectTeamMember[]>([]);
+  const [year, setYear]   = useState(now.getFullYear());
+  const [team, setTeam]   = useState<ProjectTeamMember[]>([]);
   const [projectName, setProjectName] = useState(stateMeta?.project_name || "");
   const [projectCode, setProjectCode] = useState(stateMeta?.project_code || "");
-  const [clientName, setClientName] = useState(stateMeta?.client_name || "");
-  const [loading, setLoading] = useState(true);
+  const [clientName,  setClientName]  = useState(stateMeta?.client_name  || "");
+  const [loading, setLoading]         = useState(true);
+
+  // When projectId changes (prev/next nav) refresh name fields from new state
+  useEffect(() => {
+    setProjectName(stateMeta?.project_name || "");
+    setProjectCode(stateMeta?.project_code || "");
+    setClientName (stateMeta?.client_name  || "");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
 
   useEffect(() => {
     if (!projectId) return;
@@ -127,30 +148,55 @@ export default function ProjectDashboardPage() {
     notStarted: team.filter(m => m.status === "not_started").length,
   }), [team]);
 
-  // Year options: current year ± 1
-  const yearOptions = [year - 1, year, year + 1];
-
   return (
     <DashboardLayout>
       <div>
 
         {/* Header */}
         <div className="mb-6">
-          <button
-            onClick={() => navigate("/employees/manage")}
-            className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 mb-4 transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Back to My Employees
-          </button>
+          {/* Top bar: back + project navigation */}
+          <div className="flex items-center justify-between mb-4">
+            <button
+              onClick={() => navigate("/workspace?tab=projects")}
+              className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Back to My Projects
+            </button>
+
+            {/* Prev / Next project navigation */}
+            {projectList.length > 1 && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-slate-400 mr-1">
+                  {currentIndex + 1} / {projectList.length}
+                </span>
+                <button
+                  onClick={() => goToSibling(-1)}
+                  disabled={!hasPrev}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:border-slate-300 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                  title="Previous project"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => goToSibling(1)}
+                  disabled={!hasNext}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:border-slate-300 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                  title="Next project"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </div>
 
           <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-[#217346]/20 to-[#217346]/10 flex items-center justify-center shrink-0 ring-2 ring-[#217346]/10">
-              <FolderOpen className="w-6 h-6 text-[#217346]" />
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#217346]/20 to-[#217346]/10 flex items-center justify-center shrink-0 ring-2 ring-[#217346]/10">
+              <FolderOpen className="w-5 h-5 text-[#217346]" />
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+                <h1 className="text-xl font-bold tracking-tight text-slate-900">
                   {projectName || "Project"}
                 </h1>
                 {projectCode && (
@@ -167,28 +213,14 @@ export default function ProjectDashboardPage() {
               )}
             </div>
 
-            {/* Month / Year selector */}
-            <div className="flex items-center gap-2 shrink-0">
-              <Select value={String(month)} onValueChange={v => setMonth(Number(v))}>
-                <SelectTrigger className="w-36 h-9">
-                  <SelectValue placeholder="Month" />
-                </SelectTrigger>
-                <SelectContent searchable>
-                  {MONTHS.map((m, i) => (
-                    <SelectItem key={i + 1} value={String(i + 1)}>{m}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={String(year)} onValueChange={v => setYear(Number(v))}>
-                <SelectTrigger className="w-24 h-9">
-                  <SelectValue placeholder="Year" />
-                </SelectTrigger>
-                <SelectContent searchable>
-                  {yearOptions.map(y => (
-                    <SelectItem key={y} value={String(y)}>{y}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            {/* Month / Year picker — MonthCalendarPicker uses 0-indexed; our state is 1-indexed */}
+            <div className="shrink-0">
+              <MonthCalendarPicker
+                month={month - 1}
+                year={year}
+                onChange={(m, y) => { setMonth(m + 1); setYear(y); }}
+                align="right"
+              />
             </div>
           </div>
         </div>

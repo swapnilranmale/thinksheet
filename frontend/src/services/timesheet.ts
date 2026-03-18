@@ -561,12 +561,15 @@ export const notificationService = {
 // ── Activity Log Types & API ─────────────────────────────────────────────────
 
 export const activityLogService = {
-  getAll: async (page = 1, limit = 50) => {
+  getAll: async (page = 1, limit = 50, search?: string, action?: string) => {
+    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (search) params.set('search', search);
+    if (action) params.set('action', action);
     const res = await api.get<{
       success: boolean;
       data: ActivityLog[];
       pagination: { page: number; limit: number; total: number; pages: number };
-    }>(`/logs?page=${page}&limit=${limit}`);
+    }>(`/logs?${params.toString()}`);
     return res.data;
   },
 };

@@ -49,6 +49,8 @@ export default {
         "spin-smooth": "spin-smooth 1s linear infinite",
         "text-fade": "text-fade 0.6s ease-out",
         "bell-ring": "bell-ring 1s ease-in-out 3",
+        "logo-heartbeat": "logo-heartbeat 2.2s ease-in-out infinite",
+        "logo-ring-pulse": "logo-ring-pulse 2.2s ease-out infinite",
       },
       keyframes: {
         "fade-in": {
@@ -112,6 +114,17 @@ export default {
           "70%": { transform: "rotate(2deg)" },
           "80%": { transform: "rotate(-1deg)" },
           "100%": { transform: "rotate(0deg)" },
+        },
+        "logo-heartbeat": {
+          "0%, 100%": { transform: "scale(1)" },
+          "12%": { transform: "scale(1.15)" },
+          "24%": { transform: "scale(1)" },
+          "36%": { transform: "scale(1.08)" },
+          "48%": { transform: "scale(1)" },
+        },
+        "logo-ring-pulse": {
+          "0%": { transform: "scale(1)", opacity: "0.65" },
+          "100%": { transform: "scale(2.4)", opacity: "0" },
         },
       },
     },

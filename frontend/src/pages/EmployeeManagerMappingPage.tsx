@@ -1500,11 +1500,14 @@ function LogsTab() {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState({ total: 0, pages: 1 });
+  const [search, setSearch] = useState("");
+  const [actionFilter, setActionFilter] = useState("all");
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const loadLogs = useCallback(async (p: number) => {
+  const loadLogs = useCallback(async (p: number, q: string, action: string) => {
     try {
       setLoading(true);
-      const res = await activityLogService.getAll(p, 20);
+      const res = await activityLogService.getAll(p, 20, q || undefined, action !== "all" ? action : undefined);
       setLogs(res.data);
       setPagination(res.pagination);
     } catch (err) {
@@ -1514,10 +1517,26 @@ function LogsTab() {
     }
   }, []);
 
+  // Reload when page changes (search/filter already reset page to 1 before firing)
   useEffect(() => {
-    loadLogs(page);
+    loadLogs(page, search, actionFilter);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page]);
+
+  function handleSearchChange(val: string) {
+    setSearch(val);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => {
+      setPage(1);
+      loadLogs(1, val, actionFilter);
+    }, 350);
+  }
+
+  function handleActionFilter(val: string) {
+    setActionFilter(val);
+    setPage(1);
+    loadLogs(1, search, val);
+  }
 
   function formatDate(iso: string) {
     const d = new Date(iso);
@@ -1530,111 +1549,170 @@ function LogsTab() {
     });
   }
 
+  const hasFilters = search.trim() || actionFilter !== "all";
+
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-5 shrink-0">
-        <p className="text-sm text-slate-500">
-          {pagination.total} log{pagination.total !== 1 ? "s" : ""}
-        </p>
+      {/* Toolbar */}
+      <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 mb-4 shrink-0 shadow-sm">
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Search */}
+          <div className="relative flex-1 min-w-[220px] max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Search by name, email, action..."
+              value={search}
+              onChange={e => handleSearchChange(e.target.value)}
+              className="w-full h-9 pl-9 pr-4 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]/30 focus:border-[#217346] focus:bg-white transition-all"
+            />
+          </div>
+
+          {/* Action filter */}
+          <select
+            value={actionFilter}
+            onChange={e => handleActionFilter(e.target.value)}
+            className="h-9 rounded-lg border border-slate-200 bg-slate-50 text-sm px-3 text-slate-600 focus:outline-none focus:ring-2 focus:ring-[#217346]/30 focus:border-[#217346] focus:bg-white transition-all min-w-[160px]"
+          >
+            <option value="all">All Actions</option>
+            {Object.entries(ACTION_LABELS).map(([key, label]) => (
+              <option key={key} value={key}>{label}</option>
+            ))}
+          </select>
+
+          {/* Stats pill */}
+          <div className="ml-auto flex items-center gap-2">
+            {loading && <Loader2 className="w-4 h-4 animate-spin text-slate-400" />}
+            <span className="text-xs text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full font-medium">
+              {pagination.total} log{pagination.total !== 1 ? "s" : ""}
+            </span>
+            {hasFilters && (
+              <button
+                onClick={() => { setSearch(""); setActionFilter("all"); setPage(1); loadLogs(1, "", "all"); }}
+                className="text-xs text-slate-400 hover:text-slate-700 underline underline-offset-2 transition-colors"
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
-      {loading ? (
+      {loading && logs.length === 0 ? (
         <div className="flex items-center justify-center py-16 text-slate-400 gap-2">
           <Loader2 className="w-5 h-5 animate-spin" />
           <span>Loading logs...</span>
         </div>
       ) : logs.length === 0 ? (
-        <div className="border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center py-16 text-slate-400">
+        <div className="bg-white border border-slate-200 rounded-xl flex flex-col items-center justify-center py-16 text-slate-400 shadow-sm">
           <ScrollText className="w-10 h-10 mb-3 opacity-30" />
-          <p className="font-medium text-slate-600">No activity logs yet</p>
-          <p className="text-sm mt-1">Actions like creating managers and employees will appear here</p>
+          <p className="font-medium text-slate-600">
+            {hasFilters ? "No logs match your filters" : "No activity logs yet"}
+          </p>
+          <p className="text-sm mt-1">
+            {hasFilters ? "Try adjusting your search or filter" : "Actions like creating managers and employees will appear here"}
+          </p>
+          {hasFilters && (
+            <button
+              onClick={() => { setSearch(""); setActionFilter("all"); setPage(1); loadLogs(1, "", "all"); }}
+              className="mt-3 text-sm text-[#217346] hover:underline font-medium"
+            >
+              Clear all filters
+            </button>
+          )}
         </div>
       ) : (
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col h-full">
+        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col flex-1 min-h-0">
           {/* ── Desktop table (md+) ── */}
           <div className="hidden md:flex md:flex-col flex-1 overflow-hidden">
             <div className="overflow-auto flex-1">
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
                   <tr>
-                    <th className="text-left px-5 py-3 font-medium text-slate-500 whitespace-nowrap">Action</th>
-                    <th className="text-left px-5 py-3 font-medium text-slate-500">Target</th>
-                    <th className="text-left px-5 py-3 font-medium text-slate-500 whitespace-nowrap">Performed By</th>
-                    <th className="text-left px-5 py-3 font-medium text-slate-500">Details</th>
-                    <th className="text-right px-5 py-3 font-medium text-slate-500 whitespace-nowrap">Date</th>
+                    <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wide whitespace-nowrap">Action</th>
+                    <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wide">Target</th>
+                    <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wide whitespace-nowrap">Performed By</th>
+                    <th className="text-left px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wide">Details</th>
+                    <th className="text-right px-5 py-3.5 font-semibold text-slate-500 text-xs uppercase tracking-wide whitespace-nowrap">Date</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-slate-50">
                   {logs.map((log) => (
-                    <tr key={log._id} className="hover:bg-slate-50 transition-colors">
+                    <tr key={log._id} className="hover:bg-slate-50/70 transition-colors group">
                       <td className="px-5 py-3.5">
                         <Badge
                           variant="outline"
-                          className={`text-xs font-medium whitespace-nowrap ${ACTION_COLORS[log.action] || "border-slate-200 bg-slate-50 text-slate-600"}`}
+                          className={`text-xs font-semibold whitespace-nowrap ${ACTION_COLORS[log.action] || "border-slate-200 bg-slate-50 text-slate-600"}`}
                         >
                           {ACTION_LABELS[log.action] || log.action}
                         </Badge>
                       </td>
                       <td className="px-5 py-3.5">
-                        <p className="font-medium text-slate-900">{log.target_name}</p>
+                        <p className="font-semibold text-slate-900 leading-tight">{log.target_name}</p>
                         {log.target_email && (
-                          <p className="text-xs text-slate-400 mt-0.5">{log.target_email}</p>
+                          <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1">
+                            <Mail className="w-3 h-3" />{log.target_email}
+                          </p>
                         )}
                       </td>
                       <td className="px-5 py-3.5">
-                        <p className="text-slate-700">{log.performed_by_name}</p>
-                        <p className="text-xs text-slate-400 mt-0.5 capitalize">{log.performed_by_role?.toLowerCase()}</p>
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-full bg-[#217346]/10 flex items-center justify-center shrink-0">
+                            <span className="text-[10px] font-bold text-[#217346]">
+                              {log.performed_by_name?.charAt(0).toUpperCase()}
+                            </span>
+                          </div>
+                          <div>
+                            <p className="font-medium text-slate-800 leading-tight">{log.performed_by_name}</p>
+                            <p className="text-xs text-slate-400 capitalize leading-tight">{log.performed_by_role?.toLowerCase()}</p>
+                          </div>
+                        </div>
                       </td>
-                      <td className="px-5 py-3.5 text-slate-500 max-w-[240px]">
-                        <p className="truncate text-sm" title={log.details}>{log.details}</p>
+                      <td className="px-5 py-3.5 text-slate-500 max-w-[280px]">
+                        <p className="truncate text-sm" title={log.details}>{log.details || <span className="text-slate-300">—</span>}</p>
                       </td>
-                      <td className="px-5 py-3.5 text-right text-xs text-slate-400 whitespace-nowrap">
-                        {formatDate(log.createdAt)}
+                      <td className="px-5 py-3.5 text-right whitespace-nowrap">
+                        <span className="text-xs text-slate-400 tabular-nums">{formatDate(log.createdAt)}</span>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-            {/* Pagination — pinned at bottom */}
-            {pagination.total > 0 && (
-              <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 bg-white shrink-0">
-                <span className="text-xs text-slate-400">
-                  Showing <strong>{pagination.total}</strong> log{pagination.total !== 1 ? "s" : ""} · Page <strong>{page}</strong> of <strong>{pagination.pages}</strong>
-                </span>
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)} className="gap-1 h-8">
-                    <ChevronLeft className="w-4 h-4" />Previous
-                  </Button>
-                  <Button variant="outline" size="sm" disabled={page >= pagination.pages} onClick={() => setPage((p) => p + 1)} className="gap-1 h-8">
-                    Next<ChevronRight className="w-4 h-4" />
-                  </Button>
-                </div>
+            {/* Pagination */}
+            <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 bg-white shrink-0">
+              <span className="text-xs text-slate-400">
+                Page <strong className="text-slate-600">{page}</strong> of <strong className="text-slate-600">{pagination.pages}</strong>
+                {" "}· <strong className="text-slate-600">{pagination.total}</strong> total
+              </span>
+              <div className="flex items-center gap-1.5">
+                <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)} className="gap-1 h-8 px-3">
+                  <ChevronLeft className="w-3.5 h-3.5" />Prev
+                </Button>
+                <Button variant="outline" size="sm" disabled={page >= pagination.pages} onClick={() => setPage((p) => p + 1)} className="gap-1 h-8 px-3">
+                  Next<ChevronRight className="w-3.5 h-3.5" />
+                </Button>
               </div>
-            )}
+            </div>
           </div>
 
           {/* ── Mobile card list (< md) ── */}
-          <div className="md:hidden overflow-y-auto flex-1 p-3 space-y-2.5">
+          <div className="md:hidden overflow-y-auto flex-1 p-3 space-y-2">
             {logs.map((log) => (
-              <div
-                key={log._id}
-                className="bg-white border border-slate-200 rounded-xl px-4 py-3.5 space-y-2"
-              >
+              <div key={log._id} className="bg-white border border-slate-200 rounded-xl px-4 py-3.5 space-y-2 shadow-xs">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <Badge variant="outline" className={`text-xs font-medium ${ACTION_COLORS[log.action] || "border-slate-200 bg-slate-50 text-slate-600"}`}>
+                  <Badge variant="outline" className={`text-xs font-semibold ${ACTION_COLORS[log.action] || "border-slate-200 bg-slate-50 text-slate-600"}`}>
                     {ACTION_LABELS[log.action] || log.action}
                   </Badge>
-                  <span className="text-xs text-slate-400">{formatDate(log.createdAt)}</span>
+                  <span className="text-xs text-slate-400 tabular-nums">{formatDate(log.createdAt)}</span>
                 </div>
                 <div>
                   <p className="font-semibold text-slate-900 text-sm">{log.target_name}</p>
-                  {log.target_email && <p className="text-xs text-slate-400">{log.target_email}</p>}
+                  {log.target_email && <p className="text-xs text-slate-400 mt-0.5">{log.target_email}</p>}
                 </div>
                 {log.details && <p className="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-1.5">{log.details}</p>}
                 <p className="text-xs text-slate-400">
-                  By <span className="font-medium text-slate-600">{log.performed_by_name}</span>{" "}·{" "}
+                  By <span className="font-semibold text-slate-700">{log.performed_by_name}</span>{" "}·{" "}
                   <span className="capitalize">{log.performed_by_role?.toLowerCase()}</span>
                 </p>
               </div>
@@ -1826,6 +1904,10 @@ function ProjectsTab() {
   const [selectedProject, setSelectedProject] = useState<ResourceMasterProject | null>(null);
   const [clientSearch, setClientSearch] = useState("");
   const [projectSearch, setProjectSearch] = useState("");
+
+  // Multi-select for bulk export
+  const [selectedClientIds, setSelectedClientIds] = useState<Set<string>>(new Set());
+  const [selectedProjectIds, setSelectedProjectIds] = useState<Set<string>>(new Set());
 
   // Export state
   const [exportOpen, setExportOpen] = useState(false);
@@ -2066,18 +2148,14 @@ function ProjectsTab() {
     const filteredClients = clientSearch.trim()
       ? clientGroups.filter(cg => cg.client_name.toLowerCase().includes(clientSearch.toLowerCase()))
       : clientGroups;
-    // Group projects by project_id across all clients to merge duplicate entries
+
+    // Build export map for all projects
     const projectMap: Record<string, AdminExportProject> = {};
     for (const cg of clientGroups) {
       for (const p of cg.projects) {
         const key = p.project_id || `${cg.client_name}|||${p.project_name}`;
         if (!projectMap[key]) {
-          projectMap[key] = {
-            project_name: p.project_name,
-            project_code: p.project_code,
-            client_name: cg.client_name,
-            resources: [],
-          };
+          projectMap[key] = { project_name: p.project_name, project_code: p.project_code, client_name: cg.client_name, resources: [] };
         }
         const seen = new Set(projectMap[key].resources.map(r => r.email));
         for (const r of p.resources) {
@@ -2089,6 +2167,53 @@ function ProjectsTab() {
       }
     }
     const allProjects: AdminExportProject[] = Object.values(projectMap);
+
+    // Build selected clients' export projects
+    const selectedClientsExport: AdminExportProject[] = selectedClientIds.size > 0
+      ? (() => {
+          const selMap: Record<string, AdminExportProject> = {};
+          for (const cg of clientGroups.filter(c => selectedClientIds.has(c.client_id))) {
+            for (const p of cg.projects) {
+              const key = p.project_id || `${cg.client_name}|||${p.project_name}`;
+              if (!selMap[key]) selMap[key] = { project_name: p.project_name, project_code: p.project_code, client_name: cg.client_name, resources: [] };
+              const seen = new Set(selMap[key].resources.map(r => r.email));
+              for (const r of p.resources) {
+                if (!seen.has(r.email)) { selMap[key].resources.push({ name: r.name, email: r.email, designation: r.designation, team_name: r.team_name, resource_id: r.resource_id }); seen.add(r.email); }
+              }
+            }
+          }
+          return Object.values(selMap);
+        })()
+      : [];
+
+    const allFilteredSelected = filteredClients.every(c => selectedClientIds.has(c.client_id));
+    const someSelected = filteredClients.some(c => selectedClientIds.has(c.client_id));
+
+    function toggleClientCheck(clientId: string, e: React.MouseEvent) {
+      e.stopPropagation();
+      setSelectedClientIds(prev => {
+        const next = new Set(prev);
+        next.has(clientId) ? next.delete(clientId) : next.add(clientId);
+        return next;
+      });
+    }
+
+    function toggleSelectAll() {
+      if (allFilteredSelected) {
+        setSelectedClientIds(prev => {
+          const next = new Set(prev);
+          filteredClients.forEach(c => next.delete(c.client_id));
+          return next;
+        });
+      } else {
+        setSelectedClientIds(prev => {
+          const next = new Set(prev);
+          filteredClients.forEach(c => next.add(c.client_id));
+          return next;
+        });
+      }
+    }
+
     return (
       <>
         {ExportDialog}
@@ -2103,57 +2228,103 @@ function ProjectsTab() {
                   placeholder="Search clients..."
                   value={clientSearch}
                   onChange={e => setClientSearch(e.target.value)}
-                  className="w-full h-9 pl-9 pr-4 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]/40 focus:border-[#217346] transition-colors"
+                  className="w-full h-9 pl-9 pr-4 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]/40 focus:border-[#217346] focus:bg-white transition-all"
                 />
               </div>
               <span className="text-sm text-slate-500 whitespace-nowrap">
                 <strong className="text-slate-700">{clientGroups.length}</strong> client{clientGroups.length !== 1 ? "s" : ""} · <strong className="text-slate-700">{clientGroups.reduce((s, c) => s + c.projects.length, 0)}</strong> projects
               </span>
             </div>
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-1.5 border-[#217346] text-[#217346] hover:bg-[#217346]/5 shrink-0"
-              onClick={() => openExport(allProjects, "All Clients – All Projects")}
-            >
-              <Download className="w-3.5 h-3.5" />
-              Export All
-            </Button>
+            <div className="flex items-center gap-2 shrink-0">
+              {selectedClientIds.size > 0 && (
+                <Button
+                  size="sm"
+                  className="gap-1.5 bg-[#217346] hover:bg-[#1a5c38] text-white"
+                  onClick={() => openExport(selectedClientsExport, `${selectedClientIds.size} Client${selectedClientIds.size > 1 ? "s" : ""} Selected`)}
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Export {selectedClientIds.size} Selected
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 border-slate-200 text-slate-600 hover:bg-slate-50 shrink-0"
+                onClick={() => openExport(allProjects, "All Clients – All Projects")}
+              >
+                <Download className="w-3.5 h-3.5" />
+                Export All
+              </Button>
+            </div>
           </div>
+
+          {/* Select-all row */}
+          <div className="flex items-center gap-3 px-5 py-2.5 border-b border-slate-100 bg-slate-50/50">
+            <input
+              type="checkbox"
+              checked={allFilteredSelected && filteredClients.length > 0}
+              ref={el => { if (el) el.indeterminate = someSelected && !allFilteredSelected; }}
+              onChange={toggleSelectAll}
+              className="w-4 h-4 rounded border-slate-300 text-[#217346] accent-[#217346] cursor-pointer"
+            />
+            <span className="text-xs text-slate-500 font-medium">
+              {selectedClientIds.size > 0 ? `${selectedClientIds.size} client${selectedClientIds.size > 1 ? "s" : ""} selected` : "Select all"}
+            </span>
+            {selectedClientIds.size > 0 && (
+              <button onClick={() => setSelectedClientIds(new Set())} className="text-xs text-slate-400 hover:text-slate-700 underline underline-offset-2 ml-1">
+                Clear
+              </button>
+            )}
+          </div>
+
           {/* List */}
           <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
-            {filteredClients.map(cg => (
-              <button
-                key={cg.client_id}
-                onClick={() => { setSelectedClient(cg); setProjectView("projects"); setProjectSearch(""); }}
-                className="w-full flex items-center gap-4 px-5 py-4 hover:bg-slate-50/80 transition-colors text-left group"
-              >
-                <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
-                  <Building2 className="w-4.5 h-4.5 text-blue-500" />
+            {filteredClients.map(cg => {
+              const isChecked = selectedClientIds.has(cg.client_id);
+              return (
+                <div
+                  key={cg.client_id}
+                  className={`flex items-center gap-3 px-5 py-4 hover:bg-slate-50/80 transition-colors group ${isChecked ? "bg-[#217346]/3" : ""}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={() => {}}
+                    onClick={e => toggleClientCheck(cg.client_id, e)}
+                    className="w-4 h-4 rounded border-slate-300 text-[#217346] accent-[#217346] cursor-pointer shrink-0"
+                  />
+                  <button
+                    onClick={() => { setSelectedClient(cg); setProjectView("projects"); setProjectSearch(""); setSelectedProjectIds(new Set()); }}
+                    className="flex items-center gap-4 flex-1 text-left min-w-0"
+                  >
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors ${isChecked ? "bg-[#217346]/15" : "bg-blue-50 group-hover:bg-blue-100"}`}>
+                      <Building2 className={`w-4 h-4 transition-colors ${isChecked ? "text-[#217346]" : "text-blue-500"}`} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className={`font-semibold transition-colors ${isChecked ? "text-[#217346]" : "text-slate-900 group-hover:text-[#217346]"}`}>{cg.client_name}</p>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {cg.projects.length} project{cg.projects.length !== 1 ? "s" : ""} · {cg.total_resources} resource{cg.total_resources !== 1 ? "s" : ""}
+                      </p>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-[#217346] transition-colors shrink-0" />
+                  </button>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-slate-900 group-hover:text-[#217346] transition-colors">{cg.client_name}</p>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    {cg.projects.length} project{cg.projects.length !== 1 ? "s" : ""} · {cg.total_resources} resource{cg.total_resources !== 1 ? "s" : ""}
-                  </p>
-                </div>
-                <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-[#217346] transition-colors shrink-0" />
-              </button>
-            ))}
+              );
+            })}
             {filteredClients.length === 0 && (
               <div className="flex items-center justify-center py-16 text-slate-400">
                 <p className="text-sm">No clients match "{clientSearch}"</p>
               </div>
             )}
           </div>
+
           {/* Footer */}
-          {clientGroups.length > 0 && (
-            <div className="shrink-0 border-t border-slate-100 px-5 py-3 flex items-center justify-between bg-white">
-              <span className="text-xs text-slate-400">
-                Showing <strong>{filteredClients.length}</strong> client{filteredClients.length !== 1 ? "s" : ""} · Page <strong>1</strong> of <strong>1</strong>
-              </span>
-            </div>
-          )}
+          <div className="shrink-0 border-t border-slate-100 px-5 py-3 flex items-center justify-between bg-white">
+            <span className="text-xs text-slate-400">
+              Showing <strong>{filteredClients.length}</strong> of <strong>{clientGroups.length}</strong> client{clientGroups.length !== 1 ? "s" : ""}
+              {selectedClientIds.size > 0 && <span className="ml-1 text-[#217346] font-medium">· {selectedClientIds.size} selected</span>}
+            </span>
+          </div>
         </div>
       </>
     );
@@ -2168,6 +2339,7 @@ function ProjectsTab() {
           (p.project_code || "").toLowerCase().includes(projectSearch.toLowerCase())
         )
       : selectedClient.projects;
+
     // Merge duplicate project entries for this client
     const clientProjMap: Record<string, AdminExportProject> = {};
     for (const p of selectedClient.projects) {
@@ -2184,6 +2356,47 @@ function ProjectsTab() {
       }
     }
     const clientExportProjects: AdminExportProject[] = Object.values(clientProjMap);
+
+    // Selected projects export
+    const selectedProjectsExport: AdminExportProject[] = selectedProjectIds.size > 0
+      ? selectedClient.projects
+          .filter(p => selectedProjectIds.has(p.project_id || p.project_name))
+          .map(p => ({
+            project_name: p.project_name,
+            project_code: p.project_code,
+            client_name: selectedClient.client_name,
+            resources: p.resources.map(r => ({ name: r.name, email: r.email, designation: r.designation, team_name: r.team_name, resource_id: r.resource_id })),
+          }))
+      : [];
+
+    const allFilteredProjSelected = filteredProjects.every(p => selectedProjectIds.has(p.project_id || p.project_name));
+    const someProjectSelected = filteredProjects.some(p => selectedProjectIds.has(p.project_id || p.project_name));
+
+    function toggleProjectCheck(projKey: string, e: React.MouseEvent) {
+      e.stopPropagation();
+      setSelectedProjectIds(prev => {
+        const next = new Set(prev);
+        next.has(projKey) ? next.delete(projKey) : next.add(projKey);
+        return next;
+      });
+    }
+
+    function toggleSelectAllProjects() {
+      if (allFilteredProjSelected) {
+        setSelectedProjectIds(prev => {
+          const next = new Set(prev);
+          filteredProjects.forEach(p => next.delete(p.project_id || p.project_name));
+          return next;
+        });
+      } else {
+        setSelectedProjectIds(prev => {
+          const next = new Set(prev);
+          filteredProjects.forEach(p => next.add(p.project_id || p.project_name));
+          return next;
+        });
+      }
+    }
+
     return (
       <>
         {ExportDialog}
@@ -2201,26 +2414,60 @@ function ProjectsTab() {
                   placeholder="Search projects..."
                   value={projectSearch}
                   onChange={e => setProjectSearch(e.target.value)}
-                  className="w-full h-9 pl-9 pr-4 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]/40 focus:border-[#217346] transition-colors"
+                  className="w-full h-9 pl-9 pr-4 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]/40 focus:border-[#217346] focus:bg-white transition-all"
                 />
               </div>
               <span className="text-sm text-slate-500 whitespace-nowrap">
-                <strong className="text-slate-700">{selectedClient.client_name}</strong> · <strong className="text-slate-700">{selectedClient.projects.length}</strong> project{selectedClient.projects.length !== 1 ? "s" : ""}
+                <strong className="text-slate-700">{selectedClient.projects.length}</strong> project{selectedClient.projects.length !== 1 ? "s" : ""}
               </span>
             </div>
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-1.5 border-[#217346] text-[#217346] hover:bg-[#217346]/5 shrink-0"
-              onClick={() => openExport(clientExportProjects, `${selectedClient.client_name} – All Projects`)}
-            >
-              <Download className="w-3.5 h-3.5" />
-              Export All
-            </Button>
+            <div className="flex items-center gap-2 shrink-0">
+              {selectedProjectIds.size > 0 && (
+                <Button
+                  size="sm"
+                  className="gap-1.5 bg-[#217346] hover:bg-[#1a5c38] text-white"
+                  onClick={() => openExport(selectedProjectsExport, `${selectedProjectIds.size} Project${selectedProjectIds.size > 1 ? "s" : ""} Selected`)}
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Export {selectedProjectIds.size} Selected
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 border-slate-200 text-slate-600 hover:bg-slate-50 shrink-0"
+                onClick={() => openExport(clientExportProjects, `${selectedClient.client_name} – All Projects`)}
+              >
+                <Download className="w-3.5 h-3.5" />
+                Export All
+              </Button>
+            </div>
           </div>
+
+          {/* Select-all row */}
+          <div className="flex items-center gap-3 px-5 py-2.5 border-b border-slate-100 bg-slate-50/50">
+            <input
+              type="checkbox"
+              checked={allFilteredProjSelected && filteredProjects.length > 0}
+              ref={el => { if (el) el.indeterminate = someProjectSelected && !allFilteredProjSelected; }}
+              onChange={toggleSelectAllProjects}
+              className="w-4 h-4 rounded border-slate-300 accent-[#217346] cursor-pointer"
+            />
+            <span className="text-xs text-slate-500 font-medium">
+              {selectedProjectIds.size > 0 ? `${selectedProjectIds.size} project${selectedProjectIds.size > 1 ? "s" : ""} selected` : "Select all"}
+            </span>
+            {selectedProjectIds.size > 0 && (
+              <button onClick={() => setSelectedProjectIds(new Set())} className="text-xs text-slate-400 hover:text-slate-700 underline underline-offset-2 ml-1">
+                Clear
+              </button>
+            )}
+          </div>
+
           {/* List */}
           <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
             {filteredProjects.map(proj => {
+              const projKey = proj.project_id || proj.project_name;
+              const isChecked = selectedProjectIds.has(projKey);
               const projExport: AdminExportProject = {
                 project_name: proj.project_name,
                 project_code: proj.project_code,
@@ -2230,17 +2477,24 @@ function ProjectsTab() {
                 })),
               };
               return (
-                <div key={proj.project_id} className="flex items-center hover:bg-slate-50/80 transition-colors group">
+                <div key={proj.project_id} className={`flex items-center gap-3 px-5 py-4 hover:bg-slate-50/80 transition-colors group ${isChecked ? "bg-[#217346]/3" : ""}`}>
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={() => {}}
+                    onClick={e => toggleProjectCheck(projKey, e)}
+                    className="w-4 h-4 rounded border-slate-300 accent-[#217346] cursor-pointer shrink-0"
+                  />
                   <button
-                    className="flex items-center gap-4 flex-1 px-5 py-4 text-left min-w-0"
+                    className="flex items-center gap-4 flex-1 text-left min-w-0"
                     onClick={() => { setSelectedProject(proj); setProjectView("resources"); }}
                   >
-                    <div className="w-9 h-9 rounded-xl bg-[#217346]/10 flex items-center justify-center shrink-0">
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors ${isChecked ? "bg-[#217346]/15" : "bg-[#217346]/8 group-hover:bg-[#217346]/15"}`}>
                       <FolderOpen className="w-4 h-4 text-[#217346]" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <p className="font-semibold text-slate-900 group-hover:text-[#217346] transition-colors">{proj.project_name || "Unnamed Project"}</p>
+                        <p className={`font-semibold transition-colors ${isChecked ? "text-[#217346]" : "text-slate-900 group-hover:text-[#217346]"}`}>{proj.project_name || "Unnamed Project"}</p>
                         {proj.project_code && (
                           <span className="text-xs font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{proj.project_code}</span>
                         )}
@@ -2257,7 +2511,7 @@ function ProjectsTab() {
                     <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-[#217346] transition-colors shrink-0" />
                   </button>
                   <button
-                    className="shrink-0 mr-4 p-2 rounded-lg text-slate-400 hover:text-[#217346] hover:bg-[#217346]/5 transition-colors"
+                    className="shrink-0 p-2 rounded-lg text-slate-400 hover:text-[#217346] hover:bg-[#217346]/5 transition-colors"
                     title={`Export ${proj.project_name}`}
                     onClick={e => { e.stopPropagation(); openExport([projExport], proj.project_name); }}
                   >
@@ -2272,14 +2526,14 @@ function ProjectsTab() {
               </div>
             )}
           </div>
+
           {/* Footer */}
-          {selectedClient.projects.length > 0 && (
-            <div className="shrink-0 border-t border-slate-100 px-5 py-3 flex items-center justify-between bg-white">
-              <span className="text-xs text-slate-400">
-                Showing <strong>{filteredProjects.length}</strong> project{filteredProjects.length !== 1 ? "s" : ""} · Page <strong>1</strong> of <strong>1</strong>
-              </span>
-            </div>
-          )}
+          <div className="shrink-0 border-t border-slate-100 px-5 py-3 flex items-center justify-between bg-white">
+            <span className="text-xs text-slate-400">
+              Showing <strong>{filteredProjects.length}</strong> of <strong>{selectedClient.projects.length}</strong> project{selectedClient.projects.length !== 1 ? "s" : ""}
+              {selectedProjectIds.size > 0 && <span className="ml-1 text-[#217346] font-medium">· {selectedProjectIds.size} selected</span>}
+            </span>
+          </div>
         </div>
       </>
     );

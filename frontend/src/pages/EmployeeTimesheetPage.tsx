@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, memo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
+import { MonthCalendarPicker } from "@/components/ui/month-calendar-picker";
 import { Badge } from "@/components/ui/badge";
 import {
   AlertDialog,
@@ -17,11 +18,9 @@ import {
   Clock,
   Send,
   Save,
-  Calendar,
   CheckCircle2,
   Loader2,
   ChevronLeft,
-  ChevronRight,
   FolderOpen,
   Pencil,
   Download,
@@ -219,9 +218,9 @@ const BillableCell = memo(function BillableCell({
   );
 });
 
-// ── MonthYearPicker ────────────────────────────────────────────────────────────
-
-const MONTH_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+// ── MonthYearPicker ─────────────────────────────────────────────────────────────
+// Thin wrapper: EmployeeTimesheetPage uses 0-indexed months (0=Jan, 11=Dec).
+// MonthCalendarPicker also uses 0-indexed, so pass through directly.
 
 function MonthYearPicker({
   month, year, disabled, onChange,
@@ -229,89 +228,15 @@ function MonthYearPicker({
   month: number; year: number; disabled?: boolean;
   onChange: (month: number, year: number) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const [pickerYear, setPickerYear] = useState(year);
-  const ref = useRef<HTMLDivElement>(null);
-
-  // sync pickerYear when year changes externally
-  useEffect(() => { setPickerYear(year); }, [year]);
-
-  // close on outside click
-  useEffect(() => {
-    if (!open) return;
-    function handler(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
-
-  function select(m: number) {
-    onChange(m, pickerYear);
-    setOpen(false);
-  }
-
-  const isCurrentMonth = (m: number) => m === month && pickerYear === year;
-  const isToday = (m: number) => m === CURRENT_MONTH && pickerYear === CURRENT_YEAR;
-
   return (
-    <div ref={ref} className="relative">
-      <button
-        disabled={disabled}
-        onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-2 h-10 px-3 rounded-lg border border-input bg-white hover:bg-slate-50 text-sm font-medium shadow-sm transition-colors disabled:opacity-40 min-w-[160px]"
-      >
-        <Calendar className="w-4 h-4 text-[#217346] shrink-0" />
-        <span className="flex-1 text-left">{MONTHS[month]}</span>
-        <span className="text-muted-foreground font-normal">{year}</span>
-        <ChevronRight className={`w-3.5 h-3.5 text-slate-400 transition-transform ${open ? "rotate-90" : ""}`} />
-      </button>
-
-      {open && (
-        <div className="absolute right-0 top-full mt-1 z-50 bg-white border rounded-xl shadow-xl p-3 w-[240px]">
-          {/* Year row */}
-          <div className="flex items-center justify-between mb-3">
-            <button
-              onClick={() => setPickerYear(y => y - 1)}
-              className="p-1 rounded hover:bg-slate-100 text-slate-500"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <span className="text-sm font-bold text-slate-800">{pickerYear}</span>
-            <button
-              onClick={() => setPickerYear(y => Math.min(y + 1, CURRENT_YEAR + 1))}
-              disabled={pickerYear >= CURRENT_YEAR + 1}
-              className="p-1 rounded hover:bg-slate-100 text-slate-500 disabled:opacity-30"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-          {/* Month grid */}
-          <div className="grid grid-cols-4 gap-1">
-            {MONTH_SHORT.map((m, idx) => {
-              const active = isCurrentMonth(idx);
-              const today = isToday(idx);
-              return (
-                <button
-                  key={idx}
-                  onClick={() => select(idx)}
-                  className={[
-                    "rounded-lg py-1.5 text-xs font-medium transition-colors",
-                    active
-                      ? "bg-[#217346] text-white shadow-sm"
-                      : today
-                      ? "border border-[#217346] text-[#217346] hover:bg-green-50"
-                      : "hover:bg-slate-100 text-slate-700",
-                  ].join(" ")}
-                >
-                  {m}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </div>
+    <MonthCalendarPicker
+      month={month}
+      year={year}
+      disabled={disabled}
+      onChange={onChange}
+      maxYear={CURRENT_YEAR + 1}
+      align="right"
+    />
   );
 }
 

@@ -25,6 +25,23 @@ router.get('/',
                 filter.performed_by = req.user._id;
             }
 
+            // Search across target_name, target_email, performed_by_name, details, action
+            if (req.query.search) {
+                const rx = new RegExp(req.query.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+                filter.$or = [
+                    { target_name: rx },
+                    { target_email: rx },
+                    { performed_by_name: rx },
+                    { details: rx },
+                    { action: rx },
+                ];
+            }
+
+            // Filter by action type
+            if (req.query.action) {
+                filter.action = req.query.action;
+            }
+
             const [logs, total] = await Promise.all([
                 ActivityLog.find(filter)
                     .sort({ createdAt: -1 })

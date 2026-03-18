@@ -3,6 +3,7 @@ import { getInitials, avatarColor, fmtDate } from "@/lib/utils";
 import { useState, useEffect, useMemo } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
+import { MonthCalendarPicker } from "@/components/ui/month-calendar-picker";
 import { Badge } from "@/components/ui/badge";
 import {
   AlertDialog,
@@ -14,13 +15,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   ChevronLeft,
   ChevronRight,
@@ -296,31 +290,17 @@ export default function ManagerTimesheetReviewPage() {
   function goBackToResources() { setView("resources"); setViewingMember(null); setViewingTimesheet(null); }
 
   // ── Month/Year selector (shared) ──────────────────────────────────────────
+  // ManagerTimesheetReviewPage uses 0-indexed months (0=Jan); MonthCalendarPicker too.
 
   function MonthYearPicker() {
     return (
-      <div className="flex items-center gap-2">
-        <Select value={String(selectedMonth)} onValueChange={(v) => setSelectedMonth(Number(v))}>
-          <SelectTrigger className="w-36 h-9">
-            <div className="flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
-              <span>{MONTHS[selectedMonth]}</span>
-            </div>
-          </SelectTrigger>
-          <SelectContent searchable>
-            {MONTHS.map((m, i) => <SelectItem key={i} value={String(i)}>{m}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <div className="flex items-center gap-0.5 border rounded-lg px-1 h-9">
-          <button onClick={() => setSelectedYear(y => y - 1)} className="p-1.5 rounded hover:bg-slate-100 text-slate-500">
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-          <span className="text-sm font-semibold text-slate-700 w-12 text-center select-none">{selectedYear}</span>
-          <button onClick={() => setSelectedYear(y => y + 1)} disabled={selectedYear >= CURRENT_YEAR + 1} className="p-1.5 rounded hover:bg-slate-100 text-slate-500 disabled:opacity-40">
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
+      <MonthCalendarPicker
+        month={selectedMonth}
+        year={selectedYear}
+        onChange={(m, y) => { setSelectedMonth(m); setSelectedYear(y); }}
+        maxYear={CURRENT_YEAR + 1}
+        align="right"
+      />
     );
   }
 

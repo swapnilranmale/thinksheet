@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate, useLocation } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Badge } from "@/components/ui/badge";
 import { getErrorMessage } from "@/lib/api";
+import { MonthCalendarPicker } from "@/components/ui/month-calendar-picker";
 import {
   ArrowLeft,
   Loader2,
@@ -12,9 +13,6 @@ import {
   CircleDashed,
   Building2,
   FolderOpen,
-  ChevronLeft,
-  ChevronRight,
-  CalendarDays,
   Download,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -44,7 +42,6 @@ const MONTHS = [
   "January","February","March","April","May","June",
   "July","August","September","October","November","December",
 ];
-const MONTH_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 
 function isToday(d: Date) {
@@ -89,97 +86,16 @@ const STATUS_CONFIG: Record<string, { label: string; badge: string; icon: typeof
 
 // ── Month-Year Calendar Picker ────────────────────────────────────────────────
 
-interface MonthPickerProps {
-  month: number;
-  year: number;
-  onChange: (month: number, year: number) => void;
-}
-
-function MonthPicker({ month, year, onChange }: MonthPickerProps) {
-  const [open, setOpen] = useState(false);
-  const [pickYear, setPickYear] = useState(year);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function handler(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
-
-  useEffect(() => { if (open) setPickYear(year); }, [open, year]);
-
-  const now = new Date();
-  const currentMonth = now.getMonth() + 1;
-  const currentYear = now.getFullYear();
-
+// MonthPicker: thin wrapper around the shared MonthCalendarPicker.
+// AdminProjectsDashboard uses 1-indexed months (1-12); the shared component uses 0-indexed.
+function MonthPicker({ month, year, onChange }: { month: number; year: number; onChange: (m: number, y: number) => void }) {
   return (
-    <div className="relative" ref={ref}>
-      <button
-        onClick={() => setOpen(v => !v)}
-        className={clsx(
-          "flex items-center gap-2 h-9 px-3.5 rounded-lg border text-sm font-medium transition-all",
-          open
-            ? "border-[#217346] bg-[#217346]/5 text-[#217346]"
-            : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
-        )}
-      >
-        <CalendarDays className="w-4 h-4 shrink-0" />
-        <span>{MONTHS[month - 1]} {year}</span>
-      </button>
-
-      {open && (
-        <div className="absolute right-0 top-11 z-50 w-72 bg-white border border-slate-200 rounded-xl shadow-lg p-4">
-          <div className="flex items-center justify-between mb-3">
-            <button onClick={() => setPickYear(y => y - 1)} className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-slate-100 text-slate-500">
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <span className="text-sm font-semibold text-slate-800">{pickYear}</span>
-            <button onClick={() => setPickYear(y => y + 1)} className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-slate-100 text-slate-500">
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-          <div className="grid grid-cols-4 gap-1.5">
-            {MONTH_SHORT.map((m, i) => {
-              const mNum = i + 1;
-              const isSelected = mNum === month && pickYear === year;
-              const isNow = mNum === currentMonth && pickYear === currentYear;
-              return (
-                <button
-                  key={m}
-                  onClick={() => { onChange(mNum, pickYear); setOpen(false); }}
-                  className={clsx(
-                    "py-2 rounded-lg text-xs font-medium transition-all",
-                    isSelected ? "bg-[#217346] text-white shadow-sm"
-                      : isNow ? "bg-[#217346]/10 text-[#217346] font-semibold"
-                      : "text-slate-600 hover:bg-slate-100"
-                  )}
-                >
-                  {m}
-                </button>
-              );
-            })}
-          </div>
-          <div className="mt-3 pt-3 border-t border-slate-100 flex gap-2">
-            <button onClick={() => { onChange(currentMonth, currentYear); setOpen(false); }} className="flex-1 py-1.5 text-xs font-medium text-[#217346] hover:bg-[#217346]/5 rounded-md">
-              This Month
-            </button>
-            <button
-              onClick={() => {
-                const prev = currentMonth === 1 ? 12 : currentMonth - 1;
-                const prevY = currentMonth === 1 ? currentYear - 1 : currentYear;
-                onChange(prev, prevY); setOpen(false);
-              }}
-              className="flex-1 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-50 rounded-md"
-            >
-              Last Month
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
+    <MonthCalendarPicker
+      month={month - 1}
+      year={year}
+      onChange={(m, y) => onChange(m + 1, y)}
+      align="right"
+    />
   );
 }
 

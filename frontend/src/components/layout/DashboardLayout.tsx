@@ -152,20 +152,29 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       collapsed ? "w-20" : "w-64"
     )}>
       {/* Animated top accent line */}
-      <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#217346] via-emerald-400 to-transparent animate-pulse" />
+      <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-[#217346] via-emerald-300 to-emerald-600/20 animate-pulse" />
+      <div className="absolute top-0 left-0 w-1/2 h-[3px] bg-gradient-to-r from-emerald-300/60 to-transparent animate-pulse [animation-delay:1.1s]" />
 
       {/* Logo with animation */}
       <div className={clsx(
         "flex items-center gap-3 px-5 py-5 animate-slide-in-left transition-all duration-300",
         collapsed && "justify-center"
       )}>
-        <div className="w-9 h-9 rounded-xl bg-[#217346] flex items-center justify-center shrink-0 shadow-lg shadow-[#217346]/30 hover:shadow-xl hover:shadow-[#217346]/50 transition-all duration-300 group">
-          <Clock className="w-4 h-4 text-white group-hover:rotate-12 transition-transform duration-300" />
+        {/* Icon with heartbeat rings */}
+        <div className="relative shrink-0 flex items-center justify-center">
+          {/* Ripple ring 1 */}
+          <div className="absolute inset-0 rounded-xl bg-emerald-500/30 animate-logo-ring-pulse" />
+          {/* Ripple ring 2 (delayed) */}
+          <div className="absolute inset-0 rounded-xl bg-emerald-400/20 animate-logo-ring-pulse [animation-delay:1.1s]" />
+          {/* Icon box */}
+          <div className="relative w-11 h-11 rounded-xl bg-gradient-to-br from-[#217346] via-emerald-600 to-emerald-500 flex items-center justify-center shadow-xl shadow-[#217346]/50 hover:shadow-2xl hover:shadow-[#217346]/70 transition-all duration-300 group animate-logo-heartbeat z-10">
+            <Clock className="w-5 h-5 text-white group-hover:rotate-12 transition-transform duration-300 drop-shadow" />
+          </div>
         </div>
         {!collapsed && (
           <div className="min-w-0">
-            <p className="text-sm font-bold text-white leading-tight">ThinkSheet</p>
-            <p className="text-[11px] text-white/40 leading-tight truncate">{user?.tenant_id || "default"}</p>
+            <p className="text-sm font-bold text-white leading-tight tracking-wide">ThinkSheet</p>
+            <p className="text-[11px] text-emerald-400/60 leading-tight truncate">{user?.tenant_id || "default"}</p>
           </div>
         )}
       </div>

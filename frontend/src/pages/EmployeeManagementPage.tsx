@@ -63,7 +63,7 @@ function FieldError({ msg }: { msg?: string }) {
 
 // ── Projects Tab ──────────────────────────────────────────────────────────────
 
-function ProjectsTab({ onProjectClick }: { onProjectClick: (proj: ResourceMasterProject) => void }) {
+function ProjectsTab({ onProjectClick }: { onProjectClick: (proj: ResourceMasterProject, list: ResourceMasterProject[], index: number) => void }) {
   const [projects, setProjects] = useState<ResourceMasterProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -132,10 +132,10 @@ function ProjectsTab({ onProjectClick }: { onProjectClick: (proj: ResourceMaster
       ) : (
         <div className="flex flex-col flex-1 min-h-0">
           <div className="overflow-y-auto flex-1 flex flex-col gap-2">
-            {filtered.map((proj) => (
+            {filtered.map((proj, idx) => (
               <button
                 key={proj.project_id}
-                onClick={() => onProjectClick(proj)}
+                onClick={() => onProjectClick(proj, filtered, idx)}
                 className="w-full bg-white border border-slate-200 rounded-xl px-5 py-3 flex items-center gap-3 hover:border-[#217346]/30 hover:shadow-sm transition-all text-left group"
               >
                 <div className="w-8 h-8 rounded-lg bg-[#217346]/10 flex items-center justify-center shrink-0">
@@ -350,9 +350,15 @@ export default function EmployeeManagementPage() {
         {/* ── Projects Tab ── */}
         {activeTab === "projects" && (
           <ProjectsTab
-            onProjectClick={(proj) =>
+            onProjectClick={(proj, list, index) =>
               navigate(`/projects/${proj.project_id}`, {
-                state: { project_name: proj.project_name, project_code: proj.project_code, client_name: proj.client_name }
+                state: {
+                  project_name: proj.project_name,
+                  project_code: proj.project_code,
+                  client_name: proj.client_name,
+                  projectList: list.map(p => ({ project_id: p.project_id, project_name: p.project_name, project_code: p.project_code, client_name: p.client_name })),
+                  currentIndex: index,
+                }
               })
             }
           />
