@@ -248,8 +248,15 @@ export default function EmployeeTimesheetPage() {
   const projectName = searchParams.get("projectName") ?? "Timesheet";
   const projectId = searchParams.get("projectId") ?? null;
 
-  const [selectedMonth, setSelectedMonth] = useState(CURRENT_MONTH);
-  const [selectedYear, setSelectedYear] = useState(CURRENT_YEAR);
+  // Allow navigation from notifications to pre-select month/year (params are 1-indexed)
+  const paramMonth = searchParams.get("month");
+  const paramYear = searchParams.get("year");
+  const [selectedMonth, setSelectedMonth] = useState(
+    paramMonth ? Number(paramMonth) - 1 : CURRENT_MONTH
+  );
+  const [selectedYear, setSelectedYear] = useState(
+    paramYear ? Number(paramYear) : CURRENT_YEAR
+  );
 
   // Submit confirmation
   const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false);
@@ -533,7 +540,7 @@ export default function EmployeeTimesheetPage() {
         {/* ── Header ── */}
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <Button variant="outline" size="sm" onClick={() => navigate("/dashboard")} className="gap-1.5 shrink-0">
+            <Button variant="outline" size="sm" onClick={() => navigate("/dashboard/projects")} className="gap-1.5 shrink-0">
               <ChevronLeft className="w-4 h-4" />
               Projects
             </Button>

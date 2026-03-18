@@ -99,10 +99,31 @@ export default function NotificationsPage() {
   function handleClick(n: AppNotification) {
     if (!n.is_read) markRead(n._id);
     if (n.type === "timesheet_submitted" && n.metadata.employee_id) {
-      navigate("/timesheet/manager");
+      // Manager: deep-link directly to that employee's timesheet
+      navigate("/timesheet/manager", {
+        state: {
+          autoSelect: {
+            employee_id: n.metadata.employee_id,
+            project_id: n.metadata.project_id,
+            month: n.metadata.month,   // 1-indexed
+            year: n.metadata.year,
+          },
+        },
+      });
     } else if (n.type === "timesheet_approved" || n.type === "timesheet_rejected") {
-      if (user?.role === "EMPLOYEE") navigate("/dashboard/projects");
-      else navigate("/timesheet/manager");
+      if (user?.role === "EMPLOYEE") {
+        // Employee: go directly to the relevant timesheet month/project
+        const params = new URLSearchParams();
+        if (n.metadata.project_id) params.set("projectId", n.metadata.project_id);
+        if (n.metadata.project_name) params.set("projectName", n.metadata.project_name);
+        if (n.metadata.month != null) params.set("month", String(n.metadata.month));
+        if (n.metadata.year != null) params.set("year", String(n.metadata.year));
+        navigate(`/timesheet/employee?${params.toString()}`);
+      } else {
+        navigate("/timesheet/manager");
+      }
+    } else if (n.type === "project_submitted") {
+      navigate("/timesheet/manager");
     }
   }
 

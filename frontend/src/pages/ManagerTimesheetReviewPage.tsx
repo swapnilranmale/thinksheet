@@ -1,6 +1,7 @@
 import { getErrorMessage } from "@/lib/api";
 import { getInitials, avatarColor, fmtDate } from "@/lib/utils";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { useLocation } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { MonthCalendarPicker } from "@/components/ui/month-calendar-picker";
@@ -85,6 +86,8 @@ type View = "clients" | "projects" | "resources" | "timesheet";
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function ManagerTimesheetReviewPage() {
+  const location = useLocation();
+
   const [view, setView] = useState<View>("clients");
   const [selectedMonth, setSelectedMonth] = useState(CURRENT_MONTH);
   const [selectedYear, setSelectedYear] = useState(CURRENT_YEAR);
@@ -114,6 +117,10 @@ export default function ManagerTimesheetReviewPage() {
   const [submitProjectOpen, setSubmitProjectOpen] = useState(false);
   const [submittingProject, setSubmittingProject] = useState(false);
 
+  // Employee to auto-open after project team loads (set by notification deep-link)
+  const [pendingEmployeeId, setPendingEmployeeId] = useState<string | null>(null);
+  const autoSelectApplied = useRef(false);
+
   // ── Load clients ─────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -139,6 +146,47 @@ export default function ManagerTimesheetReviewPage() {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  // ── Notification deep-link: auto-select client → project → employee ───────
+
+  // Step 1: once clients are loaded, find the right client/project and drill in
+  useEffect(() => {
+    if (autoSelectApplied.current) return;
+    const autoSelect = location.state?.autoSelect as {
+      employee_id: string; project_id: string; month: number; year: number;
+    } | undefined;
+    if (!autoSelect || loadingClients || clients.length === 0) return;
+
+    autoSelectApplied.current = true;
+    const { employee_id, project_id, month, year } = autoSelect;
+
+    // Set month/year (month is 1-indexed from notification)
+    setSelectedMonth(month - 1);
+    setSelectedYear(year);
+
+    // Find the client that owns this project
+    for (const client of clients) {
+      const proj = client.projects.find(p => p.project_id === project_id);
+      if (proj) {
+        setSelectedClient(client);
+        setSelectedProject(proj);
+        setView("resources");
+        setPendingEmployeeId(employee_id);
+        break;
+      }
+    }
+  }, [clients, loadingClients, location.state, autoSelectApplied]);
+
+  // Step 2: once project members load, open the pending employee's timesheet
+  useEffect(() => {
+    if (!pendingEmployeeId || loadingProject || projectMembers.length === 0) return;
+    const member = projectMembers.find(m => m.employee_id === pendingEmployeeId);
+    if (member) {
+      setPendingEmployeeId(null);
+      openTimesheet(member);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectMembers, loadingProject, pendingEmployeeId]);
 
   // ── Load project team ─────────────────────────────────────────────────────
 

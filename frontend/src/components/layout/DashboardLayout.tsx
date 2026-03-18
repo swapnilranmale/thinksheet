@@ -31,6 +31,7 @@ function SidebarLink({
   exact,
   collapsed = false,
   badge,
+  extraPaths = [],
 }: {
   to: string;
   icon: React.FC<{ className?: string }>;
@@ -39,13 +40,15 @@ function SidebarLink({
   exact?: boolean;
   collapsed?: boolean;
   badge?: number;
+  extraPaths?: string[];
 }) {
   const location = useLocation();
   // Match by pathname + optional search param
   const [path, search] = to.split("?");
-  const isActive = exact
+  const baseActive = exact
     ? location.pathname === path && (!search || location.search.includes(search))
     : location.pathname.startsWith(path) && (!search || location.search.includes(search));
+  const isActive = baseActive || extraPaths.some(p => location.pathname.startsWith(p));
 
   return (
     <button
@@ -215,6 +218,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
               onClick={() => handleNavClick("/dashboard/projects")}
               exact
               collapsed={collapsed}
+              extraPaths={["/timesheet/employee"]}
             />
           </div>
         )}
@@ -242,6 +246,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
               onClick={() => handleNavClick("/workspace?tab=projects")}
               exact={false}
               collapsed={collapsed}
+              extraPaths={["/projects/"]}
             />
             <SidebarLink
               to="/workspace?tab=employees"
