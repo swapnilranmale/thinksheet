@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, ReactNode } from "react";
-import { useSearchParams, useNavigate } from "react-router-dom";
+import { useSearchParams, useNavigate, useLocation } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -58,20 +58,26 @@ import {
   Lock,
   MoreVertical,
   Layers,
+  Trash2,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
   employeeService,
   streamlineService,
   managerTimesheetService,
+  projectTimesheetService,
   EmployeeMaster,
   StreamlineTeam,
   SyncResult,
   activityLogService,
   ActivityLog,
   ResourceMasterProject,
+  ProjectTeamMember,
 } from "@/services/timesheet";
+import { MonthCalendarPicker } from "@/components/ui/month-calendar-picker";
 import { authService } from "@/lib/auth";
+import { withUndo, showUndoToast } from "@/lib/withUndo";
 import { TeamMultiSelect } from "@/components/ui/team-multi-select";
 import { exportAdminProjectsXLSX, AdminExportProject, AdminTimesheetEntry } from "@/lib/timesheetExport";
 
@@ -342,9 +348,14 @@ function ManagersTab() {
   const [resetTarget, setResetTarget] = useState<ManagerRecord | null>(null);
   const [resetting, setResetting] = useState(false);
 
+  // Delete manager state
+  const [deleteTarget, setDeleteTarget] = useState<ManagerRecord | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
   // Edit manager state
   const [editTarget, setEditTarget] = useState<ManagerRecord | null>(null);
   const [editName, setEditName] = useState("");
+  const [editEmail, setEditEmail] = useState("");
   const [editDesignation, setEditDesignation] = useState("");
   const [editTeamIds, setEditTeamIds] = useState<string[]>([]);
   const [editSaving, setEditSaving] = useState(false);
@@ -406,10 +417,30 @@ function ManagersTab() {
     }
   }
 
+  // ── Delete manager ─────────────────────────────────────────────────────────
+  function handleDeleteManager() {
+    if (!deleteTarget) return;
+    const target = deleteTarget;
+    setDeleteTarget(null);
+    // Optimistically remove from list immediately
+    setManagers(prev => prev.filter(m => m._id !== target._id));
+    setPagination(prev => ({ ...prev, total: Math.max(0, prev.total - 1) }));
+    withUndo({
+      label: `Manager "${target.full_name}" deleted`,
+      onUndo: () => {
+        setManagers(prev => [target, ...prev]);
+        setPagination(prev => ({ ...prev, total: prev.total + 1 }));
+      },
+      action: () => authService.deleteManager(target._id),
+      onError: () => toast.error("Failed to delete manager"),
+    });
+  }
+
   // ── Edit manager ───────────────────────────────────────────────────────────
   function openEditManager(mgr: ManagerRecord) {
     setEditTarget(mgr);
     setEditName(mgr.full_name);
+    setEditEmail(mgr.email || "");
     setEditDesignation(mgr.designation || "");
     setEditTeamIds(mgr.team_ids || []);
     setEditErrors({});
@@ -420,29 +451,34 @@ function ManagersTab() {
     setEditErrors({});
   }
 
-  async function handleSaveEdit() {
+  function handleSaveEdit() {
     if (!editTarget) return;
     const errs: Record<string, string> = {};
     if (!editName.trim()) errs.editName = "Full name is required";
     else if (editName.trim().length < 2) errs.editName = "Name must be at least 2 characters";
+    const emailTrimmed = editEmail.trim().toLowerCase();
+    if (!emailTrimmed) errs.editEmail = "Email is required";
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrimmed)) errs.editEmail = "Enter a valid email address";
     if (editTeamIds.length === 0) errs.editTeams = "Select at least one team";
     if (Object.keys(errs).length > 0) { setEditErrors(errs); return; }
 
-    setEditSaving(true);
-    try {
-      await authService.updateManager(editTarget._id, {
-        full_name: editName.trim(),
-        designation: editDesignation.trim(),
-        team_ids: editTeamIds,
-      });
-      toast.success(`Manager ${editName.trim()} updated`);
-      closeEditManager();
-      await loadManagers(page, searchQuery);
-    } catch (err) {
-      toast.error(getErrorMessage(err, "Failed to update manager"));
-    } finally {
-      setEditSaving(false);
-    }
+    const prev = { ...editTarget };
+    const patch = { full_name: editName.trim(), email: emailTrimmed, designation: editDesignation.trim(), team_ids: editTeamIds };
+    // Optimistically apply update in list
+    setManagers(ms => ms.map(m => m._id === prev._id ? { ...m, ...patch } : m));
+    closeEditManager();
+    withUndo({
+      label: `Manager "${patch.full_name}" updated`,
+      onUndo: () => setManagers(ms => ms.map(m => m._id === prev._id ? prev : m)),
+      action: async () => {
+        const res = await authService.updateManager(prev._id, patch);
+        // Sync any server-side normalisation (e.g. lowercased email)
+        if (res.data?.user) {
+          setManagers(ms => ms.map(m => m._id === prev._id ? { ...m, email: res.data.user.email } : m));
+        }
+      },
+      onError: (err) => toast.error(getErrorMessage(err, "Failed to update manager")),
+    });
   }
 
   return (
@@ -553,7 +589,7 @@ function ManagersTab() {
                   {menuOpen && (
                     <>
                       <div className="fixed inset-0 z-10" onClick={() => setOpenMenuId(null)} />
-                      <div className="absolute right-0 top-9 z-20 bg-white border border-slate-200 rounded-xl shadow-lg py-1 min-w-[160px]">
+                      <div className="absolute right-0 top-9 z-20 bg-white border border-slate-200 rounded-xl shadow-lg py-1 min-w-[180px]">
                         <button
                           onClick={() => { setOpenMenuId(null); openEditManager(mgr); }}
                           className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
@@ -567,6 +603,14 @@ function ManagersTab() {
                         >
                           <KeyRound className="w-4 h-4 text-orange-500" />
                           Reset Password
+                        </button>
+                        <div className="my-1 border-t border-slate-100" />
+                        <button
+                          onClick={() => { setOpenMenuId(null); setDeleteTarget(mgr); }}
+                          className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors whitespace-nowrap"
+                        >
+                          <Trash2 className="w-4 h-4 text-red-500 shrink-0" />
+                          Delete Manager
                         </button>
                       </div>
                     </>
@@ -676,6 +720,56 @@ function ManagersTab() {
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* ── Delete Manager Confirm ── */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!deleting && !open) setDeleteTarget(null); }}>
+        <AlertDialogContent className="max-w-sm">
+          {/* Icon */}
+          <div className="flex justify-center mb-4">
+            <div className="w-12 h-12 rounded-full bg-red-50 border border-red-100 flex items-center justify-center">
+              <Trash2 className="w-5 h-5 text-red-500" />
+            </div>
+          </div>
+
+          {/* Title + description */}
+          <AlertDialogHeader className="text-center mb-0">
+            <AlertDialogTitle className="text-center text-slate-900">Delete Manager?</AlertDialogTitle>
+            <AlertDialogDescription className="text-center mt-1.5">
+              You're about to delete{" "}
+              <span className="font-semibold text-slate-700">{deleteTarget?.full_name}</span>.
+              All linked flows and team assignments will also be removed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          {/* Warning note */}
+          <div className="mt-4 flex items-start gap-2 rounded-lg bg-red-50 border border-red-100 px-3 py-2.5">
+            <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-px" />
+            <p className="text-xs text-red-600 leading-relaxed">
+              This action is <strong>permanent</strong> and cannot be undone.
+            </p>
+          </div>
+
+          {/* Actions */}
+          <AlertDialogFooter className="mt-5 flex-col sm:flex-row gap-2">
+            <AlertDialogCancel
+              onClick={() => setDeleteTarget(null)}
+              disabled={deleting}
+              className="flex-1"
+            >
+              Cancel
+            </AlertDialogCancel>
+            <Button
+              variant="destructive"
+              className="flex-1 gap-2"
+              onClick={handleDeleteManager}
+              disabled={deleting}
+            >
+              {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+              {deleting ? "Deleting..." : "Delete Manager"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* ── Edit Manager Dialog ── */}
       <Dialog open={!!editTarget} onOpenChange={(open) => { if (!editSaving && !open) closeEditManager(); }}>
         <DialogContent className="max-w-lg">
@@ -730,18 +824,22 @@ function ManagersTab() {
               </div>
             </div>
 
-            {/* Read-only email */}
+            {/* Email */}
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">
-                Email
+                Email <span className="text-red-500">*</span>
               </label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                <p className="w-full h-10 rounded-lg border border-slate-200 bg-slate-100 pl-9 pr-3 text-sm text-slate-500 flex items-center cursor-not-allowed select-none">
-                  {editTarget?.email}
-                </p>
+                <input
+                  type="email"
+                  value={editEmail}
+                  onChange={(e) => { setEditEmail(e.target.value); setEditErrors(p => { const n = { ...p }; delete n.editEmail; return n; }); }}
+                  placeholder="manager@company.com"
+                  className={`w-full h-10 rounded-lg border pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]/40 focus:border-[#217346] transition-colors ${editErrors.editEmail ? "border-red-400 bg-red-50" : "border-slate-200 bg-slate-50 hover:border-slate-300"}`}
+                />
               </div>
-              <p className="text-xs text-slate-400 mt-1">Email cannot be changed.</p>
+              <FieldError msg={editErrors.editEmail} />
             </div>
 
             {/* Teams */}
@@ -889,29 +987,33 @@ function EmployeesTab() {
     setEditErrors({});
   }
 
-  async function handleEdit() {
+  function handleEdit() {
     if (!editTarget) return;
     const errs: Record<string, string> = {};
     if (!editEmpName.trim()) errs.emp_name = "Full name is required";
     else if (editEmpName.trim().length < 2) errs.emp_name = "Name must be at least 2 characters";
     if (Object.keys(errs).length > 0) { setEditErrors(errs); return; }
-    setEditing(true);
-    try {
-      const team = teams.find(t => t._id === editEmpTeamId);
-      await employeeService.update(editTarget._id, {
-        emp_name: editEmpName.trim(),
-        designation: editEmpDesignation.trim(),
-        team_id: editEmpTeamId || undefined,
-        team_name: team?.team_name,
-      });
-      toast.success(`${editEmpName.trim()} updated`);
-      setEditTarget(null);
-      await loadData(page, searchQuery, filterTeamId);
-    } catch (err) {
-      toast.error(getErrorMessage(err, "Failed to update employee"));
-    } finally {
-      setEditing(false);
-    }
+
+    const prev = { ...editTarget };
+    const team = teams.find(t => t._id === editEmpTeamId);
+    const patch = {
+      emp_name: editEmpName.trim(),
+      designation: editEmpDesignation.trim(),
+      team_id: editEmpTeamId || undefined,
+      team_name: team?.team_name,
+    };
+    // Optimistically apply in list
+    setEmployees(es => es.map(e => e._id === prev._id
+      ? { ...e, employee_name: patch.emp_name, designation: patch.designation, team_id: patch.team_id ?? e.team_id, team_name: patch.team_name ?? e.team_name }
+      : e
+    ));
+    setEditTarget(null);
+    withUndo({
+      label: `Employee "${patch.emp_name}" updated`,
+      onUndo: () => setEmployees(es => es.map(e => e._id === prev._id ? prev : e)),
+      action: () => employeeService.update(prev._id, patch),
+      onError: () => toast.error("Failed to update employee"),
+    });
   }
 
   async function handleResetPassword() {
@@ -1774,7 +1876,7 @@ function ProjectMasterTab() {
   function handleProjectClick(proj: FlatProject) {
     const now = new Date();
     const meta = { [proj.project_id]: { project_name: proj.project_name, project_code: proj.project_code, client_name: proj.client_name } };
-    navigate(`/admin/projects?projects=${proj.project_id}&month=${now.getMonth() + 1}&year=${now.getFullYear()}`, { state: meta });
+    navigate(`/admin/projects?projects=${proj.project_id}&month=${now.getMonth() + 1}&year=${now.getFullYear()}&from=project-master`, { state: meta });
   }
 
   if (loading) {
@@ -1894,8 +1996,15 @@ function formatDate(iso: string | null) {
 
 function ProjectsTab() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [loading, setLoading] = useState(true);
   const [clientGroups, setClientGroups] = useState<ClientGroup[]>([]);
+
+  // Restore client drill-down after navigating back from AdminProjectsDashboardPage
+  const restoreClient = ((location.state as Record<string, unknown>)?._restoreClient) as
+    | { client_id: string; client_name: string }
+    | null
+    | undefined;
 
   // Drill-down state
   type ProjectView = "clients" | "projects" | "resources";
@@ -1908,6 +2017,15 @@ function ProjectsTab() {
   // Multi-select for bulk export
   const [selectedClientIds, setSelectedClientIds] = useState<Set<string>>(new Set());
   const [selectedProjectIds, setSelectedProjectIds] = useState<Set<string>>(new Set());
+
+  // Timesheet status overlay for resources view
+  const nowTs = new Date();
+  const [resourceMonth, setResourceMonth] = useState(nowTs.getMonth() + 1);
+  const [resourceYear, setResourceYear] = useState(nowTs.getFullYear());
+  const [teamData, setTeamData] = useState<Map<string, ProjectTeamMember>>(new Map());
+  const [teamLoading, setTeamLoading] = useState(false);
+  const [resourceSearch, setResourceSearch] = useState("");
+  const [resourceStatusFilter, setResourceStatusFilter] = useState("all");
 
   // Export state
   const [exportOpen, setExportOpen] = useState(false);
@@ -2031,11 +2149,45 @@ function ProjectsTab() {
       .finally(() => setLoading(false));
   }, []);
 
+  // Restore client drill-down when returning from AdminProjectsDashboardPage
+  useEffect(() => {
+    if (!restoreClient || clientGroups.length === 0 || projectView !== "clients") return;
+    const client = clientGroups.find(c => c.client_id === restoreClient.client_id);
+    if (client) {
+      setSelectedClient(client);
+      setProjectView("projects");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientGroups, restoreClient]);
+
+  // Fetch timesheet status when viewing resources of a project
+  useEffect(() => {
+    if (!selectedProject || projectView !== "resources") return;
+    setTeamLoading(true);
+    setTeamData(new Map());
+    projectTimesheetService.getProjectTeam(selectedProject.project_id, resourceMonth, resourceYear)
+      .then(res => {
+        const map = new Map<string, ProjectTeamMember>();
+        res.data.forEach(m => map.set(m.official_email.toLowerCase(), m));
+        setTeamData(map);
+      })
+      .catch(() => { /* non-critical — fall back to showing no status */ })
+      .finally(() => setTeamLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedProject, projectView, resourceMonth, resourceYear]);
+
   function viewTimesheets(projectId: string) {
     const now = new Date();
     const p = clientGroups.flatMap(cg => cg.projects).find(p => p.project_id === projectId);
     const meta = p ? { [projectId]: { project_name: p.project_name, project_code: p.project_code, client_name: p.client_name } } : {};
-    navigate(`/admin/projects?projects=${projectId}&month=${now.getMonth() + 1}&year=${now.getFullYear()}`, { state: meta });
+    navigate(`/admin/projects?projects=${projectId}&month=${now.getMonth() + 1}&year=${now.getFullYear()}&from=projects`, {
+      state: {
+        ...meta,
+        _restoreClient: selectedClient
+          ? { client_id: selectedClient.client_id, client_name: selectedClient.client_name }
+          : null,
+      },
+    });
   }
 
   // ── Breadcrumb ──────────────────────────────────────────────────────────
@@ -2550,6 +2702,29 @@ function ProjectsTab() {
         name: r.name, email: r.email, designation: r.designation, team_name: r.team_name, resource_id: r.resource_id,
       })),
     };
+
+    const RESOURCE_STATUS_CFG: Record<string, { label: string; cls: string; dot: string }> = {
+      approved:    { label: "Approved",    cls: "text-emerald-700 bg-emerald-50 border border-emerald-200", dot: "bg-emerald-500" },
+      submitted:   { label: "Submitted",   cls: "text-blue-700 bg-blue-50 border border-blue-200",         dot: "bg-blue-500" },
+      draft:       { label: "In Progress", cls: "text-amber-700 bg-amber-50 border border-amber-200",      dot: "bg-amber-500" },
+      rejected:    { label: "Rejected",    cls: "text-red-700 bg-red-50 border border-red-200",            dot: "bg-red-500" },
+      not_started: { label: "Not Started", cls: "text-slate-500 bg-slate-50 border border-slate-200",      dot: "bg-slate-300" },
+    };
+
+    const q = resourceSearch.toLowerCase();
+    const filteredResources = selectedProject.resources.filter(r => {
+      const member = teamData.get(r.email?.toLowerCase() ?? "");
+      const status = member?.status ?? "not_started";
+      const matchesSearch = !q
+        || r.name?.toLowerCase().includes(q)
+        || r.email?.toLowerCase().includes(q)
+        || r.resource_id?.toLowerCase().includes(q)
+        || r.designation?.toLowerCase().includes(q)
+        || r.team_name?.toLowerCase().includes(q);
+      const matchesStatus = resourceStatusFilter === "all" || status === resourceStatusFilter;
+      return matchesSearch && matchesStatus;
+    });
+
     return (
       <>
         {ExportDialog}
@@ -2566,7 +2741,14 @@ function ProjectsTab() {
                 {selectedProject.project_code && <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded ml-1">{selectedProject.project_code}</span>}
               </p>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-2 shrink-0 flex-wrap">
+              {/* Month picker for timesheet status */}
+              <MonthCalendarPicker
+                month={resourceMonth - 1}
+                year={resourceYear}
+                onChange={(m, y) => { setResourceMonth(m + 1); setResourceYear(y); }}
+                align="right"
+              />
               <Button
                 size="sm"
                 variant="outline"
@@ -2586,6 +2768,33 @@ function ProjectsTab() {
               </Button>
             </div>
           </div>
+
+          {/* Filter bar */}
+          <div className="flex items-center gap-3 px-5 py-3 border-b border-slate-100 shrink-0 flex-wrap">
+            <div className="relative flex-1 min-w-[180px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+              <input
+                value={resourceSearch}
+                onChange={e => setResourceSearch(e.target.value)}
+                placeholder="Search name, email, ID, designation..."
+                className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#217346]/30 focus:border-[#217346]/50 bg-slate-50"
+              />
+            </div>
+            <select
+              value={resourceStatusFilter}
+              onChange={e => setResourceStatusFilter(e.target.value)}
+              className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#217346]/30 text-slate-600"
+            >
+              <option value="all">All Statuses</option>
+              <option value="approved">Approved</option>
+              <option value="submitted">Submitted</option>
+              <option value="draft">In Progress</option>
+              <option value="rejected">Rejected</option>
+              <option value="not_started">Not Started</option>
+            </select>
+            {teamLoading && <Loader2 className="w-3.5 h-3.5 text-slate-400 animate-spin shrink-0" />}
+          </div>
+
           {selectedProject.resources.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
               <Users className="w-8 h-8 mb-2 opacity-30" />
@@ -2603,33 +2812,55 @@ function ProjectsTab() {
                       <th className="px-4 py-3 text-left font-semibold">Email</th>
                       <th className="px-4 py-3 text-left font-semibold">Designation</th>
                       <th className="px-4 py-3 text-left font-semibold">Team</th>
-                      <th className="px-4 py-3 text-left font-semibold">Status</th>
+                      <th className="px-4 py-3 text-left font-semibold">Timesheet Status</th>
+                      <th className="px-4 py-3 text-right font-semibold">Worked Hrs</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {selectedProject.resources.map((r, i) => (
-                      <tr key={i} className="hover:bg-slate-50 transition-colors">
-                        <td className="px-4 py-3 text-slate-400 text-xs font-mono">{i + 1}</td>
-                        <td className="px-4 py-3 font-medium text-slate-800">{r.name || "—"}</td>
-                        <td className="px-4 py-3 font-mono text-xs text-slate-500">{r.resource_id || "—"}</td>
-                        <td className="px-4 py-3 text-slate-500 text-xs">{r.email || "—"}</td>
-                        <td className="px-4 py-3 text-slate-500 text-xs">{r.designation || "—"}</td>
-                        <td className="px-4 py-3 text-slate-500 text-xs">{r.team_name || "—"}</td>
-                        <td className="px-4 py-3">
-                          <span className={`inline-flex items-center gap-1 text-xs font-medium ${r.is_active ? "text-emerald-600" : "text-slate-400"}`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${r.is_active ? "bg-emerald-500" : "bg-slate-300"}`} />
-                            {r.is_active ? "Active" : "Inactive"}
-                          </span>
+                    {filteredResources.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="px-4 py-10 text-center text-slate-400 text-xs">
+                          No resources match the current filters
                         </td>
                       </tr>
-                    ))}
+                    ) : filteredResources.map((r, i) => {
+                      const member = teamData.get(r.email?.toLowerCase() ?? "");
+                      const status = member?.status ?? "not_started";
+                      const cfg = RESOURCE_STATUS_CFG[status] ?? RESOURCE_STATUS_CFG.not_started;
+                      return (
+                        <tr key={i} className="hover:bg-slate-50 transition-colors">
+                          <td className="px-4 py-3 text-slate-400 text-xs font-mono">{i + 1}</td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-7 h-7 rounded-full bg-[#217346]/10 flex items-center justify-center text-[10px] font-bold text-[#217346] shrink-0">
+                                {getInitials(r.name || "?")}
+                              </div>
+                              <span className="font-medium text-slate-800 text-xs">{r.name || "—"}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 font-mono text-xs text-slate-500">{r.resource_id || "—"}</td>
+                          <td className="px-4 py-3 text-slate-500 text-xs">{r.email || "—"}</td>
+                          <td className="px-4 py-3 text-slate-500 text-xs">{r.designation || "—"}</td>
+                          <td className="px-4 py-3 text-slate-500 text-xs">{r.team_name || "—"}</td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full ${cfg.cls}`}>
+                              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cfg.dot}`} />
+                              {cfg.label}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right text-xs font-medium text-slate-700">
+                            {member && member.total_worked > 0 ? `${member.total_worked}h` : <span className="text-slate-300">—</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
               {/* Footer */}
               <div className="shrink-0 border-t border-slate-100 px-5 py-3 flex items-center justify-between bg-white">
                 <span className="text-xs text-slate-400">
-                  Showing <strong>{selectedProject.resources.length}</strong> resource{selectedProject.resources.length !== 1 ? "s" : ""} · Page <strong>1</strong> of <strong>1</strong>
+                  Showing <strong>{filteredResources.length}</strong> of <strong>{selectedProject.resources.length}</strong> resource{selectedProject.resources.length !== 1 ? "s" : ""}
                 </span>
               </div>
             </>

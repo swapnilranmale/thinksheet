@@ -15,7 +15,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  Clock,
   Send,
   Save,
   CheckCircle2,
@@ -27,8 +26,10 @@ import {
   FileSpreadsheet,
   FileText,
   File,
+  MessageSquare,
 } from "lucide-react";
 import { toast } from "sonner";
+import { showUndoToast } from "@/lib/withUndo";
 import { timesheetService, Timesheet, TimesheetEntry, DayStatus } from "@/services/timesheet";
 import { getErrorMessage } from "@/lib/api";
 import { getDaysInMonth, toDateKey, statusRowBg, statusBadgeClass, tableTh, tableTd, tableThTotal } from "@/lib/utils";
@@ -261,6 +262,11 @@ export default function EmployeeTimesheetPage() {
   // Submit confirmation
   const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false);
 
+  // Correction request
+  const [correctionDialogOpen, setCorrectionDialogOpen] = useState(false);
+  const [correctionReason, setCorrectionReason] = useState("");
+  const [requestingCorrection, setRequestingCorrection] = useState(false);
+
   // Export dialog
   const [exportOpen, setExportOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState<ExportFormat>("xlsx");
@@ -349,13 +355,33 @@ export default function EmployeeTimesheetPage() {
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  async function handleRequestCorrection() {
+    if (!timesheet || !correctionReason.trim()) return;
+    setRequestingCorrection(true);
+    try {
+      const res = await timesheetService.requestCorrection(timesheet._id, correctionReason.trim());
+      setTimesheet(res.data);
+      setCorrectionDialogOpen(false);
+      setCorrectionReason("");
+      toast.success("Correction request sent to your manager.");
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to send correction request"));
+    } finally {
+      setRequestingCorrection(false);
+    }
+  }
+
   async function handleRecall() {
     if (!timesheet) return;
     setSaving(true);
     try {
       const res = await timesheetService.recall(timesheet._id);
-      setTimesheet(res.data);
-      toast.success("Timesheet reopened for editing.");
+      const recalledTs = res.data;
+      setTimesheet(recalledTs);
+      showUndoToast("Timesheet recalled — reopened for editing", async () => {
+        const resubmitted = await timesheetService.submit(recalledTs._id);
+        setTimesheet(resubmitted.data);
+      });
     } catch (err) {
       toast.error(getErrorMessage(err, "Failed to recall timesheet"));
     } finally {
@@ -444,7 +470,6 @@ export default function EmployeeTimesheetPage() {
   async function handleSubmitConfirmed() {
     setSubmitConfirmOpen(false);
 
-    // Double-check validation with latest cells before submitting
     const preCheckErrors = validateCells(cellsRef.current);
     if (preCheckErrors.length > 0) {
       preCheckErrors.forEach((e) => toast.error(e));
@@ -455,6 +480,7 @@ export default function EmployeeTimesheetPage() {
     try {
       const entries = buildEntriesFromCells(cellsRef.current);
       const apiMonth = selectedMonth + 1;
+      let submittedTs;
 
       if (!timesheet) {
         if (entries.length === 0) {
@@ -464,19 +490,25 @@ export default function EmployeeTimesheetPage() {
         }
         const saved = await timesheetService.create(apiMonth, selectedYear, entries, projectId);
         const submitted = await timesheetService.submit(saved.data._id);
-        setTimesheet(submitted.data);
-        const s1 = buildCellsFromEntries(submitted.data.entries, days);
-        cellsRef.current = s1;
-        setCells(s1);
+        submittedTs = submitted.data;
       } else {
         const updated = await timesheetService.update(timesheet._id, entries);
         const submitted = await timesheetService.submit(updated.data._id);
-        setTimesheet(submitted.data);
-        const s2 = buildCellsFromEntries(submitted.data.entries, days);
-        cellsRef.current = s2;
-        setCells(s2);
+        submittedTs = submitted.data;
       }
-      toast.success("Timesheet submitted! Your manager can now review it.");
+
+      setTimesheet(submittedTs);
+      const newCells = buildCellsFromEntries(submittedTs.entries, days);
+      cellsRef.current = newCells;
+      setCells(newCells);
+
+      showUndoToast("Timesheet submitted — awaiting manager review", async () => {
+        const recalled = await timesheetService.recall(submittedTs._id);
+        setTimesheet(recalled.data);
+        const recalledCells = buildCellsFromEntries(recalled.data.entries, days);
+        cellsRef.current = recalledCells;
+        setCells(recalledCells);
+      });
     } catch (err) {
       toast.error(getErrorMessage(err, "Failed to submit timesheet"));
     } finally {
@@ -646,10 +678,33 @@ export default function EmployeeTimesheetPage() {
               <p className="text-sm font-medium text-emerald-800">
                 Timesheet approved for {MONTHS[selectedMonth]} {selectedYear}
               </p>
-              <p className="text-xs text-emerald-600">
-                Your timesheet has been reviewed and approved by your manager.
-              </p>
+              {timesheet?.correction_request?.status === "pending" ? (
+                <p className="text-xs text-amber-600 font-medium mt-0.5">
+                  Correction request pending — waiting for manager review.
+                </p>
+              ) : (
+                <p className="text-xs text-emerald-600">
+                  Your timesheet has been reviewed and approved by your manager.
+                </p>
+              )}
             </div>
+            {timesheet?.correction_request?.status === "pending" ? (
+              <Badge className="bg-amber-100 text-amber-700 border-amber-200 gap-1 shrink-0">
+                <MessageSquare className="w-3 h-3" />
+                Correction Pending
+              </Badge>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => { setCorrectionReason(""); setCorrectionDialogOpen(true); }}
+                disabled={saving}
+                className="gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-100 shrink-0"
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                Request Correction
+              </Button>
+            )}
           </div>
         )}
         {status === "rejected" && (
@@ -726,9 +781,9 @@ export default function EmployeeTimesheetPage() {
                         </td>
 
                         {/* Status */}
-                        <td style={td} className="text-center">
+                        <td style={{ ...td, width: 112 }} className="text-center">
                           {isLocked ? (
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold border ${statusBadgeClass(cell.status)}`}>
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold border whitespace-nowrap ${statusBadgeClass(cell.status)}`}>
                               {cell.status}
                             </span>
                           ) : (
@@ -944,6 +999,41 @@ export default function EmployeeTimesheetPage() {
             >
               <Download className="w-4 h-4" />
               Export
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Correction request dialog */}
+      <AlertDialog open={correctionDialogOpen} onOpenChange={setCorrectionDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <MessageSquare className="w-5 h-5 text-emerald-600" />
+              Request Correction
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Your approved timesheet for <strong>{MONTHS[selectedMonth]} {selectedYear}</strong> will be sent back to your manager with your correction reason.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="py-2">
+            <textarea
+              value={correctionReason}
+              onChange={(e) => setCorrectionReason(e.target.value)}
+              placeholder="Describe what needs to be corrected..."
+              rows={3}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 focus:border-emerald-400 resize-none"
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleRequestCorrection}
+              disabled={!correctionReason.trim() || requestingCorrection}
+              className="bg-[#217346] hover:bg-[#185c37] text-white disabled:opacity-50"
+            >
+              {requestingCorrection ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+              Send Correction Request
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

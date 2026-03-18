@@ -26,7 +26,7 @@ const projectSubmissionSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        enum: ['submitted', 'acknowledged'],
+        enum: ['submitted', 'acknowledged', 'reverted'],
         default: 'submitted'
     },
     submitted_by: {
@@ -49,6 +49,9 @@ const projectSubmissionSchema = new mongoose.Schema({
     },
     total_employees: { type: Number, default: 0 },
     total_billable_hours: { type: Number, default: 0 },
+    reverted_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    reverted_at: { type: Date, default: null },
+    revert_reason: { type: String, default: null },
 }, {
     timestamps: true
 });

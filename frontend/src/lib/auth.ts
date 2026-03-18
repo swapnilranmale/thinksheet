@@ -88,8 +88,11 @@ export const authService = {
     return authApi.get<{ success: boolean; data: any[]; pagination?: { total: number; page: number; limit: number; pages: number } }>(`/managers${q ? `?${q}` : ""}`);
   },
 
-  updateManager: (id: string, data: { team_ids?: string[]; designation?: string; full_name?: string }) =>
+  updateManager: (id: string, data: { team_ids?: string[]; designation?: string; full_name?: string; email?: string }) =>
     authApi.put<{ success: boolean; user: any }>(`/managers/${id}`, data),
+
+  deleteManager: (id: string) =>
+    authApi.delete<{ success: boolean; message: string }>(`/managers/${id}`),
 
   resetPassword: (user_id: string) =>
     authApi.post<{ success: boolean; message: string }>("/reset-password", { user_id }),

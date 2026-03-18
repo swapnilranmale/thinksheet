@@ -51,6 +51,7 @@ import {
 } from "@/services/timesheet";
 
 import { authService } from "@/lib/auth";
+import { withUndo } from "@/lib/withUndo";
 import { useAuth } from "@/contexts/AuthContext";
 import { getInitials, fmtDate as formatDate } from "@/lib/utils";
 
@@ -220,12 +221,12 @@ export default function EmployeeManagementPage() {
   const [editEmpName, setEditEmpName] = useState("");
   const [editEmpDesignation, setEditEmpDesignation] = useState("");
   const [editEmpTeamId, setEditEmpTeamId] = useState("");
-  const [editing, setEditing] = useState(false);
+  const [editing] = useState(false);
   const [editErrors, setEditErrors] = useState<Record<string, string>>({});
 
   // ── Delete & Reset ──────────────────────────────────────────────────────────
   const [deleteTarget, setDeleteTarget] = useState<EmployeeMaster | null>(null);
-  const [deleting, setDeleting] = useState(false);
+  const [deleting] = useState(false);
   const [resetTarget, setResetTarget] = useState<EmployeeMaster | null>(null);
   const [resetting, setResetting] = useState(false);
 
@@ -277,46 +278,46 @@ export default function EmployeeManagementPage() {
     setEditErrors({});
   }
 
-  async function handleEdit() {
+  function handleEdit() {
     if (!editTarget) return;
     const errors = validateEditFields(editEmpName);
     if (Object.keys(errors).length > 0) {
       setEditErrors(errors);
       return;
     }
-    setEditing(true);
-    try {
-      const team = teams.find(t => t._id === editEmpTeamId);
-      await employeeService.update(editTarget._id, {
-        emp_name: editEmpName.trim(),
-        designation: editEmpDesignation.trim(),
-        team_id: editEmpTeamId || undefined,
-        team_name: team?.team_name,
-      });
-      toast.success(`Employee ${editEmpName.trim()} updated`);
-      setEditTarget(null);
-      await loadData();
-    } catch (err) {
-      toast.error(getErrorMessage(err, "Failed to update employee"));
-    } finally {
-      setEditing(false);
-    }
+    const prev = { ...editTarget };
+    const team = teams.find(t => t._id === editEmpTeamId);
+    const patch = {
+      emp_name: editEmpName.trim(),
+      designation: editEmpDesignation.trim(),
+      team_id: editEmpTeamId || undefined,
+      team_name: team?.team_name,
+    };
+    setEmployees(es => es.map(e => e._id === prev._id
+      ? { ...e, employee_name: patch.emp_name, designation: patch.designation, team_id: patch.team_id ?? e.team_id, team_name: patch.team_name ?? e.team_name }
+      : e
+    ));
+    setEditTarget(null);
+    withUndo({
+      label: `Employee "${patch.emp_name}" updated`,
+      onUndo: () => setEmployees(es => es.map(e => e._id === prev._id ? prev : e)),
+      action: () => employeeService.update(prev._id, patch),
+      onError: () => toast.error("Failed to update employee"),
+    });
   }
 
   // ── Delete ─────────────────────────────────────────────────────────────────
-  async function handleDelete() {
+  function handleDelete() {
     if (!deleteTarget) return;
-    setDeleting(true);
-    try {
-      await employeeService.remove(deleteTarget._id);
-      toast.success("Employee deleted");
-      setDeleteTarget(null);
-      await loadData();
-    } catch (err) {
-      toast.error(getErrorMessage(err, "Failed to delete employee"));
-    } finally {
-      setDeleting(false);
-    }
+    const target = deleteTarget;
+    setDeleteTarget(null);
+    setEmployees(prev => prev.filter(e => e._id !== target._id));
+    withUndo({
+      label: `Employee "${target.employee_name}" deleted`,
+      onUndo: () => setEmployees(prev => [target, ...prev]),
+      action: () => employeeService.remove(target._id),
+      onError: () => toast.error("Failed to delete employee"),
+    });
   }
 
   // ── Reset Password ─────────────────────────────────────────────────────────

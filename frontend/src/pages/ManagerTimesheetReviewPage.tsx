@@ -33,8 +33,11 @@ import {
   XCircle,
   AlertCircle,
   Send,
+  RotateCcw,
+  MessageSquare,
 } from "lucide-react";
 import { toast } from "sonner";
+import { showUndoToast } from "@/lib/withUndo";
 import {
   managerTimesheetService,
   projectTimesheetService,
@@ -116,6 +119,10 @@ export default function ManagerTimesheetReviewPage() {
   const [projectSubmission, setProjectSubmission] = useState<ProjectSubmission | null>(null);
   const [submitProjectOpen, setSubmitProjectOpen] = useState(false);
   const [submittingProject, setSubmittingProject] = useState(false);
+
+  // Revert to employee state
+  const [revertConfirmOpen, setRevertConfirmOpen] = useState(false);
+  const [reverting, setReverting] = useState(false);
 
   // Employee to auto-open after project team loads (set by notification deep-link)
   const [pendingEmployeeId, setPendingEmployeeId] = useState<string | null>(null);
@@ -267,15 +274,25 @@ export default function ManagerTimesheetReviewPage() {
     setApproving(true);
     try {
       const res = await managerTimesheetService.approve(viewingTimesheet._id);
-      setViewingTimesheet(res.data);
-      // Also update the member status in the resources list
+      const approvedTs = res.data;
+      setViewingTimesheet(approvedTs);
+      const prevMember = viewingMember;
       if (viewingMember) {
         setViewingMember({ ...viewingMember, status: "approved" });
         setProjectMembers(prev => prev.map(m =>
           m.employee_id === viewingMember.employee_id ? { ...m, status: "approved" as const } : m
         ));
       }
-      toast.success("Timesheet approved successfully");
+      showUndoToast("Timesheet approved", async () => {
+        const reverted = await managerTimesheetService.revertToEmployee(approvedTs._id);
+        setViewingTimesheet(reverted.data);
+        if (prevMember) {
+          setViewingMember({ ...prevMember, status: "submitted" });
+          setProjectMembers(prev => prev.map(m =>
+            m.employee_id === prevMember.employee_id ? { ...m, status: "submitted" as const } : m
+          ));
+        }
+      });
     } catch (err) {
       toast.error(getErrorMessage(err, "Failed to approve timesheet"));
     } finally {
@@ -287,17 +304,29 @@ export default function ManagerTimesheetReviewPage() {
     if (!viewingTimesheet || !rejectReason.trim()) return;
     setRejectDialogOpen(false);
     setApproving(true);
+    const reason = rejectReason.trim();
     try {
-      const res = await managerTimesheetService.reject(viewingTimesheet._id, rejectReason.trim());
-      setViewingTimesheet(res.data);
+      const res = await managerTimesheetService.reject(viewingTimesheet._id, reason);
+      const rejectedTs = res.data;
+      setViewingTimesheet(rejectedTs);
+      const prevMember = viewingMember;
       if (viewingMember) {
         setViewingMember({ ...viewingMember, status: "rejected" });
         setProjectMembers(prev => prev.map(m =>
           m.employee_id === viewingMember.employee_id ? { ...m, status: "rejected" as const } : m
         ));
       }
-      toast.success("Timesheet rejected");
       setRejectReason("");
+      showUndoToast("Timesheet rejected", async () => {
+        const reverted = await managerTimesheetService.revertToEmployee(rejectedTs._id);
+        setViewingTimesheet(reverted.data);
+        if (prevMember) {
+          setViewingMember({ ...prevMember, status: "submitted" });
+          setProjectMembers(prev => prev.map(m =>
+            m.employee_id === prevMember.employee_id ? { ...m, status: "submitted" as const } : m
+          ));
+        }
+      });
     } catch (err) {
       toast.error(getErrorMessage(err, "Failed to reject timesheet"));
     } finally {
@@ -329,6 +358,39 @@ export default function ManagerTimesheetReviewPage() {
       toast.error(getErrorMessage(err, "Failed to submit project"));
     } finally {
       setSubmittingProject(false);
+    }
+  }
+
+  async function handleRevertToEmployee() {
+    if (!viewingTimesheet) return;
+    setRevertConfirmOpen(false);
+    setReverting(true);
+    const prevStatus = viewingTimesheet.status as "approved" | "submitted";
+    try {
+      const res = await managerTimesheetService.revertToEmployee(viewingTimesheet._id);
+      const revertedTs = res.data;
+      setViewingTimesheet(revertedTs);
+      const prevMember = viewingMember;
+      if (viewingMember) {
+        setViewingMember({ ...viewingMember, status: "draft" });
+        setProjectMembers(prev => prev.map(m =>
+          m.employee_id === viewingMember.employee_id ? { ...m, status: "draft" as const } : m
+        ));
+      }
+      showUndoToast("Timesheet reverted to employee", async () => {
+        const reApproved = await managerTimesheetService.approve(revertedTs._id);
+        setViewingTimesheet(reApproved.data);
+        if (prevMember) {
+          setViewingMember({ ...prevMember, status: prevStatus });
+          setProjectMembers(prev => prev.map(m =>
+            m.employee_id === prevMember.employee_id ? { ...m, status: prevStatus } : m
+          ));
+        }
+      });
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to revert timesheet"));
+    } finally {
+      setReverting(false);
     }
   }
 
@@ -741,6 +803,19 @@ export default function ManagerTimesheetReviewPage() {
                   </Button>
                 </>
               )}
+              {/* Revert to Employee — available for approved timesheets */}
+              {viewingTimesheet?.status === "approved" && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 border-amber-300 text-amber-700 hover:bg-amber-50"
+                  disabled={reverting}
+                  onClick={() => setRevertConfirmOpen(true)}
+                >
+                  {reverting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                  Revert to Employee
+                </Button>
+              )}
             </div>
           </div>
 
@@ -752,6 +827,27 @@ export default function ManagerTimesheetReviewPage() {
                 <p className="text-sm font-medium text-red-800">Timesheet Rejected</p>
                 <p className="text-xs text-red-600 mt-0.5">{viewingTimesheet.rejection_reason}</p>
               </div>
+            </div>
+          )}
+
+          {/* Correction request banner — show if employee has a pending correction request */}
+          {viewingTimesheet?.status === "approved" && viewingTimesheet.correction_request?.status === "pending" && (
+            <div className="flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-lg mb-4">
+              <MessageSquare className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-amber-800">Employee Requested Correction</p>
+                <p className="text-xs text-amber-700 mt-0.5">{viewingTimesheet.correction_request.reason}</p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 border-amber-300 text-amber-700 hover:bg-amber-100 shrink-0"
+                disabled={reverting}
+                onClick={() => setRevertConfirmOpen(true)}
+              >
+                {reverting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                Revert to Employee
+              </Button>
             </div>
           )}
 
@@ -790,7 +886,7 @@ export default function ManagerTimesheetReviewPage() {
                     <thead className="sticky top-0 z-10">
                       <tr className="bg-[#217346] text-white text-xs">
                         <th className="border border-[#1a5c38] px-3 py-2.5 text-left font-semibold w-16">Sr No</th>
-                        <th className="border border-[#1a5c38] px-3 py-2.5 text-left font-semibold w-24">Status</th>
+                        <th className="border border-[#1a5c38] px-3 py-2.5 text-left font-semibold w-28">Status</th>
                         <th className="border border-[#1a5c38] px-3 py-2.5 text-left font-semibold w-32">Date</th>
                         <th className="border border-[#1a5c38] px-3 py-2.5 text-left font-semibold w-28">Day</th>
                         <th className="border border-[#1a5c38] px-3 py-2.5 text-left font-semibold">Task Description</th>
@@ -806,13 +902,15 @@ export default function ManagerTimesheetReviewPage() {
                         return (
                           <tr key={idx} className={`${rowBg} hover:bg-blue-50/50 transition-colors`}>
                             <td className="border border-gray-200 px-3 py-2.5 text-slate-400 font-mono text-xs">{idx + 1}</td>
-                            <td className="border border-gray-200 px-3 py-2.5">
+                            <td className="border border-gray-200 px-3 py-2.5 w-28">
                               {isHoliday ? (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-100 text-red-600">Holiday</span>
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-100 text-red-600 whitespace-nowrap">Holiday</span>
                               ) : entry.status === "Extra Working" ? (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-100 text-blue-600">Extra Working</span>
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-100 text-blue-600 whitespace-nowrap">Extra Working</span>
+                              ) : entry.status === "On leave" ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-orange-100 text-orange-600 whitespace-nowrap">On Leave</span>
                               ) : (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-green-100 text-green-700">Working</span>
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-green-100 text-green-700 whitespace-nowrap">Working</span>
                               )}
                             </td>
                             <td className={`border border-gray-200 px-3 py-2.5 whitespace-nowrap font-medium text-sm ${isWeekend ? "text-red-500" : "text-slate-700"}`}>
@@ -901,6 +999,32 @@ export default function ManagerTimesheetReviewPage() {
                 className="bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
               >
                 Reject Timesheet
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* ── Revert to Employee confirmation dialog ── */}
+        <AlertDialog open={revertConfirmOpen} onOpenChange={setRevertConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <RotateCcw className="w-5 h-5 text-amber-600" />
+                Revert Timesheet to Employee
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                Revert <strong>{viewingMember.employee_name}</strong>'s approved timesheet for{" "}
+                <strong>{MONTHS[selectedMonth]} {selectedYear}</strong> back to draft?
+                The employee will be notified and can edit and re-submit.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleRevertToEmployee}
+                className="bg-amber-600 hover:bg-amber-700 text-white"
+              >
+                Revert to Employee
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

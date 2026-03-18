@@ -10,9 +10,12 @@ import {
   Check,
   Loader2,
   Send,
+  MessageSquare,
+  RotateCcw,
 } from "lucide-react";
 import { clsx } from "clsx";
 import { notificationService, AppNotification } from "@/services/timesheet";
+import { withUndo } from "@/lib/withUndo";
 import { useAuth } from "@/contexts/AuthContext";
 
 function notifIcon(type: string) {
@@ -34,6 +37,21 @@ function notifIcon(type: string) {
   if (type === "project_submitted") return (
     <div className="w-10 h-10 rounded-full bg-purple-50 flex items-center justify-center shrink-0 ring-2 ring-purple-100">
       <Send className="w-5 h-5 text-purple-600" />
+    </div>
+  );
+  if (type === "correction_requested") return (
+    <div className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center shrink-0 ring-2 ring-amber-100">
+      <MessageSquare className="w-5 h-5 text-amber-600" />
+    </div>
+  );
+  if (type === "timesheet_reverted") return (
+    <div className="w-10 h-10 rounded-full bg-orange-50 flex items-center justify-center shrink-0 ring-2 ring-orange-100">
+      <RotateCcw className="w-5 h-5 text-orange-500" />
+    </div>
+  );
+  if (type === "project_reverted") return (
+    <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center shrink-0 ring-2 ring-red-100">
+      <RotateCcw className="w-5 h-5 text-red-500" />
     </div>
   );
   return (
@@ -80,20 +98,39 @@ export default function NotificationsPage() {
 
   useEffect(() => { load(page); }, [page, load]);
 
-  async function markAllRead() {
-    try {
-      await notificationService.markAllRead();
-      setUnreadCount(0);
-      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
-    } catch { /* ignore */ }
+  function markAllRead() {
+    // Capture previous state for undo
+    const prevNotifications = notifications.map(n => ({ ...n }));
+    const prevUnreadCount = unreadCount;
+    // Optimistically mark all as read
+    setUnreadCount(0);
+    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    withUndo({
+      label: "All notifications marked as read",
+      duration: 4000,
+      onUndo: () => {
+        setNotifications(prevNotifications);
+        setUnreadCount(prevUnreadCount);
+      },
+      action: () => notificationService.markAllRead(),
+    });
   }
 
-  async function markRead(id: string) {
-    try {
-      await notificationService.markRead(id);
-      setUnreadCount(prev => Math.max(0, prev - 1));
-      setNotifications(prev => prev.map(n => n._id === id ? { ...n, is_read: true } : n));
-    } catch { /* ignore */ }
+  function markRead(id: string) {
+    const target = notifications.find(n => n._id === id);
+    if (!target || target.is_read) return;
+    // Optimistically mark as read
+    setUnreadCount(prev => Math.max(0, prev - 1));
+    setNotifications(prev => prev.map(n => n._id === id ? { ...n, is_read: true } : n));
+    withUndo({
+      label: "Notification marked as read",
+      duration: 4000,
+      onUndo: () => {
+        setUnreadCount(prev => prev + 1);
+        setNotifications(prev => prev.map(n => n._id === id ? { ...n, is_read: false } : n));
+      },
+      action: () => notificationService.markRead(id),
+    });
   }
 
   function handleClick(n: AppNotification) {
@@ -123,6 +160,29 @@ export default function NotificationsPage() {
         navigate("/timesheet/manager");
       }
     } else if (n.type === "project_submitted") {
+      navigate("/timesheet/manager");
+    } else if (n.type === "correction_requested" && n.metadata.employee_id) {
+      // Manager: deep-link to that employee's timesheet
+      navigate("/timesheet/manager", {
+        state: {
+          autoSelect: {
+            employee_id: n.metadata.employee_id,
+            project_id: n.metadata.project_id,
+            month: n.metadata.month,
+            year: n.metadata.year,
+          },
+        },
+      });
+    } else if (n.type === "timesheet_reverted") {
+      // Employee: go to the timesheet that was reverted
+      const params = new URLSearchParams();
+      if (n.metadata.project_id) params.set("projectId", n.metadata.project_id);
+      if (n.metadata.project_name) params.set("projectName", n.metadata.project_name);
+      if (n.metadata.month != null) params.set("month", String(n.metadata.month));
+      if (n.metadata.year != null) params.set("year", String(n.metadata.year));
+      navigate(`/timesheet/employee?${params.toString()}`);
+    } else if (n.type === "project_reverted") {
+      // Manager: go to their timesheet review page
       navigate("/timesheet/manager");
     }
   }

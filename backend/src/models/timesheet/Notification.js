@@ -15,10 +15,13 @@ const notificationSchema = new mongoose.Schema({
     type: {
         type: String,
         enum: [
-            'timesheet_submitted',   // employee submitted → notify manager
-            'timesheet_approved',    // manager approved → notify employee
-            'timesheet_rejected',    // manager rejected → notify employee
-            'project_submitted',     // manager submitted project → notify admin
+            'timesheet_submitted',      // employee submitted → notify manager
+            'timesheet_approved',       // manager approved → notify employee
+            'timesheet_rejected',       // manager rejected → notify employee
+            'project_submitted',        // manager submitted project → notify admin
+            'correction_requested',     // employee requested correction → notify manager
+            'timesheet_reverted',       // manager reverted timesheet → notify employee
+            'project_reverted',         // admin reverted project → notify manager
         ],
         required: true
     },

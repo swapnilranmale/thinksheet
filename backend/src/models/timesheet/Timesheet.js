@@ -70,6 +70,12 @@ const timesheetSchema = new mongoose.Schema({
     rejection_reason: {
         type: String,
         default: null
+    },
+    correction_request: {
+        status: { type: String, enum: ['pending', 'granted'], default: null },
+        reason: { type: String, default: null },
+        requested_at: { type: Date, default: null },
+        requested_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }
     }
 }, {
     timestamps: true

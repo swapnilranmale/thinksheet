@@ -960,4 +960,196 @@ router.get('/project-submissions', ...auth, authorize(['ADMINISTRATOR']), async 
     }
 });
 
+// ─── PUT /api/timesheet/:id/request-correction — employee requests correction on approved timesheet
+router.put('/:id/request-correction', ...auth, authorize(['EMPLOYEE']), async (req, res) => {
+    try {
+        const tenantId = req.tenantIdString;
+        const { id } = req.params;
+        const { reason } = req.body;
+
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ error: 'Invalid timesheet ID' });
+        }
+        if (!reason || !reason.trim()) {
+            return res.status(400).json({ error: 'Correction reason is required' });
+        }
+
+        const timesheet = await Timesheet.findOne({ _id: id, tenant_id: tenantId, user_id: req.user._id });
+        if (!timesheet) {
+            return res.status(404).json({ error: 'Timesheet not found' });
+        }
+        if (timesheet.status !== 'approved') {
+            return res.status(400).json({ error: 'Correction can only be requested for approved timesheets' });
+        }
+        if (timesheet.correction_request?.status === 'pending') {
+            return res.status(400).json({ error: 'A correction request is already pending' });
+        }
+
+        timesheet.correction_request = {
+            status: 'pending',
+            reason: reason.trim(),
+            requested_at: new Date(),
+            requested_by: req.user._id
+        };
+        await timesheet.save();
+
+        // Notify managers
+        try {
+            const employee = await Employee.findOne({ tenant_id: tenantId, official_email: req.user.email, is_active: true }).lean();
+            const empName = employee?.employee_name || req.user.full_name || req.user.email;
+            const MONTH_NAMES = ['','January','February','March','April','May','June','July','August','September','October','November','December'];
+
+            if (employee?.team_id) {
+                const managers = await User.find({
+                    tenant_id: tenantId, role: 'MANAGER', team_ids: employee.team_id, is_deleted: { $ne: true }
+                }).select('_id').lean();
+
+                for (const mgr of managers) {
+                    await Notification.create({
+                        tenant_id: tenantId,
+                        recipient_id: mgr._id,
+                        type: 'correction_requested',
+                        title: 'Correction Requested',
+                        message: `${empName} requested a correction for their ${MONTH_NAMES[timesheet.month]} ${timesheet.year} timesheet: ${reason.trim()}`,
+                        timesheet_id: timesheet._id,
+                        metadata: {
+                            employee_id: employee._id,
+                            employee_name: empName,
+                            project_id: timesheet.project_id,
+                            month: timesheet.month,
+                            year: timesheet.year,
+                        }
+                    });
+                }
+            }
+        } catch (_notifErr) { /* notification failure should not block */ }
+
+        res.json({ success: true, data: timesheet, message: 'Correction request sent to your manager' });
+    } catch (err) {
+        res.status(500).json({ error: 'Server error', message: err.message });
+    }
+});
+
+// ─── PUT /api/timesheet/:id/revert — manager reverts an approved timesheet back to draft
+router.put('/:id/revert', ...auth, authorize(['MANAGER', 'ADMINISTRATOR']), async (req, res) => {
+    try {
+        const tenantId = req.tenantIdString;
+        const { id } = req.params;
+
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ error: 'Invalid timesheet ID' });
+        }
+
+        const timesheet = await Timesheet.findOne({ _id: id, tenant_id: tenantId });
+        if (!timesheet) {
+            return res.status(404).json({ error: 'Timesheet not found' });
+        }
+        if (timesheet.status !== 'approved') {
+            return res.status(400).json({ error: 'Only approved timesheets can be reverted' });
+        }
+
+        // Verify manager has access via team_ids
+        if (req.user.role === 'MANAGER') {
+            const empUser = await User.findOne({ _id: timesheet.user_id, tenant_id: tenantId }).lean();
+            if (empUser) {
+                const emp = await Employee.findOne({ tenant_id: tenantId, official_email: empUser.email, is_active: true }).lean();
+                if (emp) {
+                    const manager = await User.findById(req.user._id).select('team_ids').lean();
+                    const teamIdSet = new Set((manager?.team_ids || []).map(tid => tid.toString()));
+                    if (!emp.team_id?.toString() || !teamIdSet.has(emp.team_id.toString())) {
+                        return res.status(403).json({ error: 'Access denied: employee not under your management' });
+                    }
+                }
+            }
+        }
+
+        timesheet.status = 'draft';
+        timesheet.submitted_at = null;
+        timesheet.approved_by = null;
+        timesheet.approved_at = null;
+        timesheet.rejection_reason = null;
+        timesheet.correction_request = { status: null, reason: null, requested_at: null, requested_by: null };
+        await timesheet.save();
+
+        // Notify employee
+        try {
+            const empUser = await User.findOne({ _id: timesheet.user_id, tenant_id: tenantId }).lean();
+            const employee = empUser ? await Employee.findOne({ tenant_id: tenantId, official_email: empUser.email }).lean() : null;
+            const MONTH_NAMES = ['','January','February','March','April','May','June','July','August','September','October','November','December'];
+            await Notification.create({
+                tenant_id: tenantId,
+                recipient_id: timesheet.user_id,
+                type: 'timesheet_reverted',
+                title: 'Timesheet Reverted for Correction',
+                message: `Your ${MONTH_NAMES[timesheet.month]} ${timesheet.year} timesheet has been reverted by ${req.user.full_name || req.user.email}. Please update and re-submit.`,
+                timesheet_id: timesheet._id,
+                metadata: {
+                    employee_id: employee?._id || null,
+                    employee_name: employee?.employee_name || null,
+                    project_id: timesheet.project_id,
+                    month: timesheet.month,
+                    year: timesheet.year,
+                }
+            });
+        } catch (_notifErr) { /* notification failure should not block */ }
+
+        res.json({ success: true, data: timesheet, message: 'Timesheet reverted to draft for correction' });
+    } catch (err) {
+        res.status(500).json({ error: 'Server error', message: err.message });
+    }
+});
+
+// ─── PUT /api/timesheet/project/:projectId/revert-project — admin reverts a submitted project back to manager
+router.put('/project/:projectId/revert-project', ...auth, authorize(['ADMINISTRATOR']), async (req, res) => {
+    try {
+        const tenantId = req.tenantIdString;
+        const { projectId } = req.params;
+        const { month, year, reason } = req.body;
+
+        if (!month || !year) {
+            return res.status(400).json({ error: 'month and year are required' });
+        }
+        if (!reason || !reason.trim()) {
+            return res.status(400).json({ error: 'Revert reason is required' });
+        }
+
+        const submission = await ProjectSubmission.findOne({ tenant_id: tenantId, project_id: projectId, month, year });
+        if (!submission) {
+            return res.status(404).json({ error: 'Project submission not found' });
+        }
+        if (submission.status === 'reverted') {
+            return res.status(400).json({ error: 'Project is already reverted' });
+        }
+
+        submission.status = 'reverted';
+        submission.reverted_by = req.user._id;
+        submission.reverted_at = new Date();
+        submission.revert_reason = reason.trim();
+        await submission.save();
+
+        // Notify the manager who submitted the project
+        try {
+            const MONTH_NAMES = ['','January','February','March','April','May','June','July','August','September','October','November','December'];
+            const projectName = submission.project_name || projectId;
+            await Notification.create({
+                tenant_id: tenantId,
+                recipient_id: submission.submitted_by,
+                type: 'project_reverted',
+                title: 'Project Reverted for Correction',
+                message: `Admin reverted ${projectName} for ${MONTH_NAMES[month]} ${year} for corrections: ${reason.trim()}. Please revert individual employee timesheets as needed.`,
+                metadata: {
+                    project_id: projectId,
+                    project_name: projectName,
+                    month,
+                    year,
+                }
+            });
+        } catch (_notifErr) { /* notification failure should not block */ }
+
+        res.json({ success: true, data: submission, message: 'Project reverted to manager for corrections' });
+    } catch (err) {
+        res.status(500).json({ error: 'Server error', message: err.message });
+    }
+});
+
 export default router;

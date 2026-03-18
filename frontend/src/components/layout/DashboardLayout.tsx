@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, ReactNode } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   Clock,
@@ -48,7 +48,10 @@ function SidebarLink({
   const baseActive = exact
     ? location.pathname === path && (!search || location.search.includes(search))
     : location.pathname.startsWith(path) && (!search || location.search.includes(search));
-  const isActive = baseActive || extraPaths.some(p => location.pathname.startsWith(p));
+  const isActive = baseActive || extraPaths.some(ep => {
+    const [epath, esearch] = ep.split("?");
+    return location.pathname.startsWith(epath) && (!esearch || location.search.includes(esearch));
+  });
 
   return (
     <button
@@ -102,9 +105,47 @@ interface DashboardLayoutProps {
   children: ReactNode;
 }
 
+const TAB_LABELS: Record<string, string> = {
+  admins: "Admins",
+  managers: "Managers",
+  employees: "Employees",
+  projects: "Clients & Projects",
+  "project-master": "Project Master",
+  logs: "Activity Logs",
+};
+
+function getPageTitle(pathname: string, searchParams: URLSearchParams): { title: string; crumbs: string[] } {
+  const tab = searchParams.get("tab");
+
+  if (pathname === "/dashboard") return { title: "Dashboard", crumbs: ["My Workspace"] };
+  if (pathname === "/dashboard/projects") return { title: "My Projects", crumbs: ["My Workspace"] };
+  if (pathname === "/timesheet/employee") return { title: "Timesheet", crumbs: ["My Workspace", "My Projects"] };
+  if (pathname === "/notifications") return { title: "Notifications", crumbs: [] };
+  if (pathname === "/account") return { title: "My Account", crumbs: [] };
+  if (pathname === "/workspace") {
+    if (tab === "employees") return { title: "My Employees", crumbs: ["Operations"] };
+    return { title: "My Projects", crumbs: ["Operations"] };
+  }
+  if (pathname === "/timesheet/manager") return { title: "Timesheets", crumbs: ["Operations"] };
+  if (pathname.startsWith("/projects/")) return { title: "Project Dashboard", crumbs: ["Operations", "My Projects"] };
+  if (pathname === "/timesheet/mapping") {
+    const label = tab ? (TAB_LABELS[tab] || tab) : "Administration";
+    return { title: label, crumbs: ["Administration"] };
+  }
+  if (pathname === "/admin/projects") {
+    const fromParam = searchParams.get("from");
+    const parentLabel = fromParam === "project-master" ? "Project Master" : "Clients & Projects";
+    return { title: "Project Timesheets", crumbs: ["Administration", parentLabel] };
+  }
+  return { title: "ThinkSheet", crumbs: [] };
+}
+
 export function DashboardLayout({ children }: DashboardLayoutProps) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const pageInfo = getPageTitle(location.pathname, searchParams);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -300,6 +341,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
               label="Clients & Projects"
               onClick={() => handleNavClick("/timesheet/mapping?tab=projects")}
               collapsed={collapsed}
+              extraPaths={["/admin/projects?from=projects"]}
             />
             <SidebarLink
               to="/timesheet/mapping?tab=project-master"
@@ -307,6 +349,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
               label="Project Master"
               onClick={() => handleNavClick("/timesheet/mapping?tab=project-master")}
               collapsed={collapsed}
+              extraPaths={["/admin/projects?from=project-master"]}
             />
             <SidebarLink
               to="/timesheet/mapping?tab=logs"
@@ -444,23 +487,50 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       {/* Main content area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-slate-50">
         {/* Mobile topbar */}
-        <div className="md:hidden flex items-center justify-between px-4 py-3 bg-[#0f1923] border-b border-white/10">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setMobileOpen(true)}
-              className="p-1.5 rounded-lg hover:bg-white/10 transition-colors"
-            >
-              <Menu className="w-5 h-5 text-white" />
-            </button>
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded-lg bg-[#217346] flex items-center justify-center">
-                <Clock className="w-3.5 h-3.5 text-white" />
-              </div>
-              <span className="font-bold text-sm text-white">ThinkSheet</span>
+        <div className="md:hidden flex items-center gap-3 px-4 py-3 bg-[#0f1923] border-b border-white/10">
+          <button
+            onClick={() => setMobileOpen(true)}
+            className="p-1.5 rounded-lg hover:bg-white/10 transition-colors shrink-0"
+          >
+            <Menu className="w-5 h-5 text-white" />
+          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="w-6 h-6 rounded-lg bg-[#217346] flex items-center justify-center">
+              <Clock className="w-3.5 h-3.5 text-white" />
             </div>
+          </div>
+          <div className="flex-1 min-w-0">
+            {pageInfo.crumbs.length > 0 && (
+              <p className="text-[10px] text-white/40 leading-none truncate">
+                {pageInfo.crumbs[pageInfo.crumbs.length - 1]}
+              </p>
+            )}
+            <p className="text-sm font-semibold text-white leading-tight truncate">{pageInfo.title}</p>
           </div>
         </div>
 
+
+        {/* Desktop top bar */}
+        <div className="hidden md:flex items-center gap-3 px-6 py-3 bg-white border-b border-slate-200/80 shrink-0">
+          <div className="flex-1 min-w-0 flex items-center gap-2">
+            {pageInfo.crumbs.length > 0 && (
+              <>
+                {pageInfo.crumbs.map((crumb, i) => (
+                  <span key={i} className="flex items-center gap-2 text-xs text-slate-400">
+                    {i > 0 && <ChevronRight className="w-3 h-3 shrink-0" />}
+                    {crumb}
+                  </span>
+                ))}
+                <ChevronRight className="w-3 h-3 text-slate-300 shrink-0" />
+              </>
+            )}
+            <span className="text-xs font-semibold text-slate-700">{pageInfo.title}</span>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-[11px] text-slate-400 font-medium">Live</span>
+          </div>
+        </div>
 
         {/* Page content */}
         <main className="flex-1 overflow-auto p-6 flex flex-col min-h-0">

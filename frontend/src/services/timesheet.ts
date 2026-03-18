@@ -18,6 +18,13 @@ export interface TimesheetEntry {
   comments: string;
 }
 
+export interface CorrectionRequest {
+  status: 'pending' | 'granted' | null;
+  reason: string | null;
+  requested_at: string | null;
+  requested_by: string | null;
+}
+
 export interface Timesheet {
   _id: string;
   employee_id: string;
@@ -30,6 +37,7 @@ export interface Timesheet {
   approved_by: string | null;
   approved_at: string | null;
   rejection_reason: string | null;
+  correction_request: CorrectionRequest | null;
   tenant_id: string;
   createdAt: string;
   updatedAt: string;
@@ -168,6 +176,12 @@ export const timesheetService = {
     const res = await api.put<{ success: boolean; data: Timesheet; message: string }>(`/timesheet/${id}/recall`, {});
     return res.data; // { data, message }
   },
+
+  /** Request correction from manager on an approved timesheet */
+  requestCorrection: async (id: string, reason: string) => {
+    const res = await api.put<{ success: boolean; data: Timesheet; message: string }>(`/timesheet/${id}/request-correction`, { reason });
+    return res.data;
+  },
 };
 
 // ── Manager Team Timesheets API ────────────────────────────────────────────────
@@ -202,6 +216,14 @@ export const managerTimesheetService = {
   reject: async (timesheetId: string, reason: string) => {
     const res = await api.put<{ success: boolean; data: Timesheet; message: string }>(
       `/timesheet/${timesheetId}/reject`, { reason }
+    );
+    return res.data;
+  },
+
+  /** Revert an approved timesheet back to draft (for employee correction) */
+  revertToEmployee: async (timesheetId: string) => {
+    const res = await api.put<{ success: boolean; data: Timesheet; message: string }>(
+      `/timesheet/${timesheetId}/revert`, {}
     );
     return res.data;
   },
@@ -474,13 +496,16 @@ export interface ProjectSubmission {
   client_name: string;
   month: number;
   year: number;
-  status: 'submitted' | 'acknowledged';
+  status: 'submitted' | 'acknowledged' | 'reverted';
   submitted_by: { _id: string; full_name: string; email: string } | string;
   submitted_at: string;
   acknowledged_by: string | null;
   acknowledged_at: string | null;
   total_employees: number;
   total_billable_hours: number;
+  reverted_by: string | null;
+  reverted_at: string | null;
+  revert_reason: string | null;
 }
 
 export const projectSubmissionService = {
@@ -509,13 +534,22 @@ export const projectSubmissionService = {
     );
     return res.data;
   },
+
+  /** Admin reverts a submitted project back to manager for corrections */
+  revertProject: async (projectId: string, month: number, year: number, reason: string) => {
+    const res = await api.put<{ success: boolean; data: ProjectSubmission; message: string }>(
+      `/timesheet/project/${projectId}/revert-project`,
+      { month, year, reason }
+    );
+    return res.data;
+  },
 };
 
 // ── Notification Types & API ─────────────────────────────────────────────────
 
 export interface AppNotification {
   _id: string;
-  type: 'timesheet_submitted' | 'timesheet_approved' | 'timesheet_rejected' | 'project_submitted';
+  type: 'timesheet_submitted' | 'timesheet_approved' | 'timesheet_rejected' | 'project_submitted' | 'correction_requested' | 'timesheet_reverted' | 'project_reverted';
   title: string;
   message: string;
   timesheet_id: string | null;

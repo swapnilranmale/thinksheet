@@ -408,7 +408,7 @@ router.get('/managers', authenticate, checkActive, authorize(['ADMINISTRATOR']),
 router.put('/managers/:id', authenticate, checkActive, authorize(['ADMINISTRATOR']), async (req, res) => {
     try {
         const { id } = req.params;
-        const { team_ids, designation, full_name } = req.body;
+        const { team_ids, designation, full_name, email } = req.body;
 
         const manager = await User.findOne({
             _id: id,
@@ -419,6 +419,26 @@ router.put('/managers/:id', authenticate, checkActive, authorize(['ADMINISTRATOR
 
         if (!manager) {
             return res.status(404).json({ error: 'Manager not found' });
+        }
+
+        // Validate and update email if provided
+        if (email !== undefined) {
+            const normalised = email.trim().toLowerCase();
+            if (!normalised || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalised)) {
+                return res.status(400).json({ error: 'Invalid email address' });
+            }
+            if (normalised !== manager.email) {
+                const conflict = await User.findOne({
+                    email: normalised,
+                    tenant_id: TENANT_ID,
+                    is_deleted: { $ne: true },
+                    _id: { $ne: id }
+                });
+                if (conflict) {
+                    return res.status(409).json({ error: 'Email already in use by another user' });
+                }
+                manager.email = normalised;
+            }
         }
 
         if (Array.isArray(team_ids)) manager.team_ids = team_ids;
@@ -434,7 +454,7 @@ router.put('/managers/:id', authenticate, checkActive, authorize(['ADMINISTRATOR
             targetName: manager.full_name,
             targetEmail: manager.email,
             details: `Updated manager ${manager.full_name}`,
-            metadata: { team_ids: manager.team_ids, designation: manager.designation }
+            metadata: { team_ids: manager.team_ids, designation: manager.designation, email: manager.email }
         });
 
         res.json({
@@ -447,6 +467,50 @@ router.put('/managers/:id', authenticate, checkActive, authorize(['ADMINISTRATOR
                 team_ids: manager.team_ids
             }
         });
+    } catch (err) {
+        res.status(500).json({ error: 'Server error', message: err.message });
+    }
+});
+
+// ── DELETE /api/auth/managers/:id — soft-delete manager + dependent flows ────
+router.delete('/managers/:id', authenticate, checkActive, authorize(['ADMINISTRATOR']), async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const manager = await User.findOne({
+            _id: id,
+            role: 'MANAGER',
+            tenant_id: TENANT_ID,
+            is_deleted: { $ne: true }
+        });
+
+        if (!manager) {
+            return res.status(404).json({ error: 'Manager not found' });
+        }
+
+        // Soft-delete the manager account
+        manager.is_deleted = true;
+        manager.is_active = false;
+        await manager.save();
+
+        // Soft-delete all EmployeeManagerMapping records tied to this manager
+        const EmployeeManagerMapping = (await import('../models/timesheet/EmployeeManagerMapping.js')).default;
+        await EmployeeManagerMapping.updateMany(
+            { manager_id: manager._id, tenant_id: TENANT_ID, is_deleted: { $ne: true } },
+            { $set: { is_deleted: true, is_active: false } }
+        );
+
+        await logActivity({
+            tenantId: TENANT_ID,
+            action: 'MANAGER_DELETED',
+            performedBy: req.user,
+            targetType: 'MANAGER',
+            targetName: manager.full_name,
+            targetEmail: manager.email,
+            details: `Soft-deleted manager ${manager.full_name} and associated flows`
+        });
+
+        res.json({ success: true, message: `Manager ${manager.full_name} deleted successfully` });
     } catch (err) {
         res.status(500).json({ error: 'Server error', message: err.message });
     }

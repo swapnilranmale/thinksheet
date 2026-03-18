@@ -2,6 +2,17 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { useSearchParams, useNavigate, useLocation } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { getErrorMessage } from "@/lib/api";
 import { MonthCalendarPicker } from "@/components/ui/month-calendar-picker";
 import {
@@ -14,6 +25,8 @@ import {
   Building2,
   FolderOpen,
   Download,
+  RotateCcw,
+  AlertCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -296,9 +309,9 @@ function EmployeeTimesheetView({ member, projectName, clientName, month, year, o
                       </td>
 
                       {/* Status */}
-                      <td style={td} className="text-center">
+                      <td style={{ ...td, width: 112 }} className="text-center">
                         {cell ? (
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold border ${statusBadgeClass(cell.status)}`}>
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold border whitespace-nowrap ${statusBadgeClass(cell.status)}`}>
                             {cell.status}
                           </span>
                         ) : (
@@ -403,9 +416,10 @@ interface ProjectSectionProps {
   month: number;
   year: number;
   onViewEmployee: (member: ProjectTeamMember, projectName: string, clientName: string) => void;
+  onRevertProject: (projectId: string, projectName: string) => void;
 }
 
-function ProjectSection({ pd, month, year, onViewEmployee }: ProjectSectionProps) {
+function ProjectSection({ pd, month, year, onViewEmployee, onRevertProject }: ProjectSectionProps) {
   // eslint-disable-next-line react-hooks/rules-of-hooks
   const { submitted, inProgress, notStarted, total } = useMemo(() => ({
     submitted:  pd.team.filter(m => m.status === "submitted").length,
@@ -462,15 +476,36 @@ function ProjectSection({ pd, month, year, onViewEmployee }: ProjectSectionProps
 
       {/* Project submission banner */}
       {pd.submission && (
-        <div className="flex items-center gap-3 px-5 py-2.5 bg-emerald-50 border-b border-emerald-100">
-          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-          <p className="text-xs text-emerald-700 font-medium">
-            Submitted by{" "}
-            <strong>{typeof pd.submission.submitted_by === "object" ? pd.submission.submitted_by.full_name : "Manager"}</strong>
-            {" on "}
-            {new Date(pd.submission.submitted_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
-            {" · "}{pd.submission.total_employees} employees · {pd.submission.total_billable_hours}h billable
+        <div className={`flex items-center gap-3 px-5 py-2.5 border-b ${pd.submission.status === "reverted" ? "bg-amber-50 border-amber-100" : "bg-emerald-50 border-emerald-100"}`}>
+          {pd.submission.status === "reverted" ? (
+            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+          ) : (
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          )}
+          <p className={`text-xs font-medium flex-1 ${pd.submission.status === "reverted" ? "text-amber-700" : "text-emerald-700"}`}>
+            {pd.submission.status === "reverted" ? (
+              <>Reverted for corrections · {pd.submission.revert_reason}</>
+            ) : (
+              <>
+                Submitted by{" "}
+                <strong>{typeof pd.submission.submitted_by === "object" ? pd.submission.submitted_by.full_name : "Manager"}</strong>
+                {" on "}
+                {new Date(pd.submission.submitted_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                {" · "}{pd.submission.total_employees} employees · {pd.submission.total_billable_hours}h billable
+              </>
+            )}
           </p>
+          {pd.submission.status !== "reverted" && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5 h-7 text-xs border-amber-300 text-amber-700 hover:bg-amber-50 shrink-0"
+              onClick={() => onRevertProject(pd.projectId, projectName)}
+            >
+              <RotateCcw className="w-3 h-3" />
+              Revert to Manager
+            </Button>
+          )}
         </div>
       )}
 
@@ -567,6 +602,9 @@ export default function AdminProjectsDashboardPage() {
 
   const projectIdsParam = searchParams.get("projects") || "";
   const projectIds = projectIdsParam.split(",").map(s => s.trim()).filter(Boolean);
+  const sourceTab = searchParams.get("from") === "project-master" ? "project-master" : "projects";
+  const backLabel = sourceTab === "project-master" ? "Back to Project Master" : "Back to Projects";
+  const backPath = `/timesheet/mapping?tab=${sourceTab}`;
 
   const now = new Date();
   const [month, setMonth] = useState(
@@ -576,7 +614,9 @@ export default function AdminProjectsDashboardPage() {
     parseInt(searchParams.get("year") || "") || now.getFullYear()
   );
 
-  const stateMeta = (location.state || {}) as Record<string, { project_name: string; project_code: string; client_name: string }>;
+  const locationState = (location.state || {}) as Record<string, unknown>;
+  const restoreClient = locationState._restoreClient as { client_id: string; client_name: string } | null | undefined;
+  const stateMeta = locationState as Record<string, { project_name: string; project_code: string; client_name: string }>;
 
   const [projects, setProjects] = useState<ProjectData[]>(() =>
     projectIds.map(id => ({
@@ -596,6 +636,31 @@ export default function AdminProjectsDashboardPage() {
     projectName: string;
     clientName: string;
   } | null>(null);
+
+  // Revert project state
+  const [revertProjectOpen, setRevertProjectOpen] = useState(false);
+  const [revertTarget, setRevertTarget] = useState<{ projectId: string; projectName: string } | null>(null);
+  const [revertReason, setRevertReason] = useState("");
+  const [revertingProject, setRevertingProject] = useState(false);
+
+  async function handleRevertProject() {
+    if (!revertTarget || !revertReason.trim()) return;
+    setRevertingProject(true);
+    try {
+      const res = await projectSubmissionService.revertProject(revertTarget.projectId, month, year, revertReason.trim());
+      setProjects(prev => prev.map(p =>
+        p.projectId === revertTarget.projectId ? { ...p, submission: res.data } : p
+      ));
+      setRevertProjectOpen(false);
+      setRevertReason("");
+      setRevertTarget(null);
+      toast.success("Project reverted to manager for corrections");
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to revert project"));
+    } finally {
+      setRevertingProject(false);
+    }
+  }
 
   function handleMonthChange(m: number, y: number) {
     setMonth(m);
@@ -663,8 +728,8 @@ export default function AdminProjectsDashboardPage() {
         <div className="w-full flex flex-col items-center justify-center py-24 text-slate-400">
           <FolderOpen className="w-12 h-12 mb-3 opacity-20" />
           <p className="font-medium text-slate-600">No projects selected</p>
-          <button onClick={() => navigate("/timesheet/mapping?tab=projects")} className="mt-4 text-sm text-[#217346] underline">
-            Go back to Projects
+          <button onClick={() => navigate(backPath, { state: restoreClient ? { _restoreClient: restoreClient } : undefined })} className="mt-4 text-sm text-[#217346] underline">
+            {backLabel}
           </button>
         </div>
       </DashboardLayout>
@@ -687,12 +752,12 @@ export default function AdminProjectsDashboardPage() {
         <button
           onClick={() => {
             if (selectedMember) { setSelectedMember(null); return; }
-            navigate("/timesheet/mapping?tab=projects");
+            navigate(backPath, { state: restoreClient ? { _restoreClient: restoreClient } : undefined });
           }}
           className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 mb-5 transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
-          {selectedMember ? `Back to ${selectedMember.projectName}` : "Back to Projects"}
+          {selectedMember ? `Back to ${selectedMember.projectName}` : backLabel}
         </button>
 
         {/* Header */}
@@ -767,6 +832,11 @@ export default function AdminProjectsDashboardPage() {
                   onViewEmployee={(member, projectName, clientName) =>
                     setSelectedMember({ member, projectName, clientName })
                   }
+                  onRevertProject={(projectId, projectName) => {
+                    setRevertTarget({ projectId, projectName });
+                    setRevertReason("");
+                    setRevertProjectOpen(true);
+                  }}
                 />
               ))}
             </div>
@@ -774,6 +844,43 @@ export default function AdminProjectsDashboardPage() {
         )}
 
       </div>
+
+      {/* Revert project dialog */}
+      <AlertDialog open={revertProjectOpen} onOpenChange={setRevertProjectOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <RotateCcw className="w-5 h-5 text-amber-600" />
+              Revert Project to Manager
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Revert <strong>{revertTarget?.projectName}</strong> for{" "}
+              <strong>{month}/{year}</strong> back to the manager for corrections?
+              The manager will be notified and can revert individual employee timesheets.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="py-2">
+            <textarea
+              value={revertReason}
+              onChange={(e) => setRevertReason(e.target.value)}
+              placeholder="Describe what needs to be corrected..."
+              rows={3}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-400 resize-none"
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleRevertProject}
+              disabled={!revertReason.trim() || revertingProject}
+              className="bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-50"
+            >
+              {revertingProject ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+              Revert to Manager
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </DashboardLayout>
   );
 }

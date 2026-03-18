@@ -20,7 +20,7 @@ function RoleRedirect() {
   if (isLoading) return null;
   if (!user) return <Navigate to="/login" replace />;
   if (user.role === "ADMINISTRATOR") return <Navigate to="/timesheet/mapping" replace />;
-  if (user.role === "MANAGER") return <Navigate to="/workspace" replace />;
+  if (user.role === "MANAGER") return <Navigate to="/workspace?tab=projects" replace />;
   return <Navigate to="/dashboard" replace />;
 }
 
