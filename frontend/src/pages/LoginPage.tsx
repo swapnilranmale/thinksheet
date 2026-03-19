@@ -35,7 +35,6 @@ export default function LoginPage() {
         return;
       }
       if (user.role === "ADMINISTRATOR") navigate("/timesheet/mapping", { replace: true });
-      else if (user.role === "MANAGER") navigate("/timesheet/manager", { replace: true });
       else navigate("/dashboard", { replace: true });
     } catch (err) {
       setError(getErrorMessage(err, "Invalid email or password"));

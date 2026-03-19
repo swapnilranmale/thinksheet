@@ -72,6 +72,7 @@ async function proxyGet(path, req, res) {
         clearTimeout(timeout);
 
         const data = await response.json();
+        res.set('Cache-Control', 'no-store');
         res.status(response.status).json(data);
     } catch (err) {
         console.error('[Streamline proxy error]', err.message, err.cause?.message, err.cause?.code);
@@ -246,9 +247,35 @@ router.get('/departments', authenticate, checkActive, (req, res) =>
 );
 
 // ── GET /api/streamline/teams ──────────────────────────────────────────────
-router.get('/teams', authenticate, checkActive, (req, res) =>
-    proxyGet('/api/teams', req, res)
-);
+// Only Engineering department teams are used in the Timesheet system.
+router.get('/teams', authenticate, checkActive, async (req, res) => {
+    try {
+        const { url: streamlineUrl } = getStreamlineConfig();
+        const token = makeStreamlineToken();
+        const qs = new URLSearchParams(req.query).toString();
+        const upstream = `${streamlineUrl}/api/teams${qs ? '?' + qs : ''}`;
+
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10000);
+        const upstreamRes = await fetch(upstream, {
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            signal: controller.signal,
+        });
+        clearTimeout(timeout);
+
+        const data = await upstreamRes.json();
+        const allTeams = data.teams ?? [];
+        const engineeringTeams = allTeams.filter(t =>
+            t.department_id?.department_name?.toLowerCase().includes('engin')
+        );
+        console.log(`[streamline/teams] total=${allTeams.length} engineering=${engineeringTeams.length}`);
+        res.set('Cache-Control', 'no-store');
+        return res.json({ ...data, teams: engineeringTeams });
+    } catch (err) {
+        console.error('[streamline/teams] Error:', err.message);
+        return res.status(502).json({ success: false, message: 'Failed to fetch teams from Streamline' });
+    }
+});
 
 // ── GET /api/streamline/clients ───────────────────────────────────────────────
 // Proxies Streamline's Client Master list

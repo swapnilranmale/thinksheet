@@ -268,7 +268,7 @@ function CreateManagerDialog({
   useEffect(() => {
     if (open) {
       setTeamsLoading(true);
-      streamlineService.getTeams()
+      streamlineService.getEngineeringTeams()
         .then(setTeams)
         .catch(() => toast.error("Failed to load teams"))
         .finally(() => setTeamsLoading(false));
@@ -495,7 +495,7 @@ function ManagersTab() {
       setLoading(true);
       const [res, teamsData] = await Promise.all([
         authService.getManagers({ page: p, limit: PAGE_SIZE, search: search || undefined }),
-        streamlineService.getTeams(),
+        streamlineService.getEngineeringTeams(),
       ]);
       setManagers(res.data.data);
       setPagination(res.data.pagination ?? { total: res.data.data?.length ?? 0, page: 1, limit: PAGE_SIZE, pages: 1 });
@@ -511,6 +511,13 @@ function ManagersTab() {
     loadManagers(1, "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Reload teams if Edit dialog opens while teams list is empty (e.g. after a 304 cache hit)
+  useEffect(() => {
+    if (editTarget && teams.length === 0) {
+      streamlineService.getEngineeringTeams().then(setTeams).catch(() => {});
+    }
+  }, [editTarget]);
 
   // Debounced search
   function handleSearch(q: string) {
@@ -1049,7 +1056,7 @@ function EmployeesTab() {
           search: search || undefined,
           teamId: teamId !== "all" ? teamId : undefined,
         }),
-        streamlineService.getTeams(),
+        streamlineService.getEngineeringTeams(),
       ]);
       setEmployees(empRes.data);
       setPagination(empRes.pagination ?? { total: empRes.data?.length ?? 0, page: 1, limit: PAGE_SIZE, pages: 1 });
